@@ -58,7 +58,7 @@ fields (2,000 queries, 20 candidates each).
 
 | Model | Hard top-1 | Hard top-5 | Hard MRR |
 | --- | ---: | ---: | ---: |
-| **Text-only char-CNN (scaled)** | **0.6995** | **0.9465** | **0.812** |
+| **Text-only char-CNN** | **0.6995** | **0.9465** | **0.812** |
 | Sinusoidal text+numeric CNN | 0.4875 | 0.9985 | 0.701 |
 | Masked-digit text+numeric CNN | 0.5385 | 0.9995 | 0.731 |
 | Numeric-only sinusoidal CNN | 0.3480 | 0.9840 | 0.610 |
