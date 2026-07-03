@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.~*
+.env
+.env.*
+.venv/
+venv/
+outputs/
+checkpoints/
+data/
+tokenized_sequences/
+tokenizer/
+*.tar.gz
+.hf_cache/
+.sapbert_emb_cache/
+.ipynb_checkpoints/
