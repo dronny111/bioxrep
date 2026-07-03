@@ -6,13 +6,14 @@ Start with controlled data where the invariances are known, then move to real bi
 
 The first goal is not to beat a large biological foundation model. The first goal is to show that cross-notation distillation produces representations that are measurably more invariant, more numerically faithful, and more robust under notation shift than standard token-based models.
 
-## Phase 0: repository reset without losing history
+## Phase 0: BioXRep foundation
 
 Deliverables:
 
-- Preserve the original 2021 code paths.
-- Add a new `bioxrep/` package for clean experiments.
-- Add `docs/` research artifacts.
+- Keep the active repository focused on the BioXRep framing and implementation.
+- Maintain project history in Git rather than carrying historical prototype code in the working tree.
+- Add a clean `bioxrep/` package for experiments.
+- Add `docs/` research artifacts for the paper framing and roadmap.
 - Define a minimal configuration format.
 - Add deterministic data generation and evaluation scripts.
 

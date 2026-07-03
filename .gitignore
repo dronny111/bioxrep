@@ -8,7 +8,7 @@ __pycache__/
 venv/
 outputs/
 checkpoints/
-data/
+/data/
 tokenized_sequences/
 tokenizer/
 *.tar.gz

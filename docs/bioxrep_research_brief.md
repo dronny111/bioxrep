@@ -8,7 +8,7 @@ Biological information is often expressed through multiple equivalent notations,
 
 Modern language and biological foundation models still struggle with numerical values, scientific notation, unit changes, aliases, and domain-specific symbolic systems. In biology and medicine, this weakness is not cosmetic. The same biological fact may appear as a genomic coordinate, HGVS notation, protein substitution, gene alias, clinical laboratory value, normalized measurement, or free-text interpretation.
 
-The original 2021 project asked whether a student model could learn universal numerical representations from a transliteration teacher over parallel number systems. BioXRep generalizes that idea: transliteration is treated as one instance of a broader problem, cross-notation alignment.
+BioXRep grows from a broader question about whether students can learn invariant representations from parallel symbolic systems. Here, that question is reframed directly for biology and medicine: cross-notation alignment replaces transliteration as the central abstraction.
 
 ## Central research question
 
@@ -128,7 +128,7 @@ missense mutation changing valine to glutamic acid at residue 600 in BRAF
 
 ### Why this track is the conceptual spine
 
-This is closest to the original transliteration idea. DNA, RNA, codons, proteins, and variant notations are parallel symbolic systems with strong biological semantics.
+DNA, RNA, codons, proteins, and variant notations are parallel symbolic systems with strong biological semantics, making this the conceptual spine of BioXRep.
 
 ## Track B: clinical/EHR lab-value invariance
 
@@ -198,13 +198,13 @@ This gives a fast experimental loop while preserving a path to real datasets lat
 
 ## Near-term decision
 
-The first code milestone should not attempt to repair all 2021 training code. Instead:
+The first code milestone should keep the active repository BioXRep-first:
 
-1. Keep the original code as historical prototype.
-2. Add a clean `bioxrep/` package.
+1. Keep historical prototype code out of the active tree and rely on Git history when needed.
+2. Maintain a clean `bioxrep/` package.
 3. Add deterministic data generators for Track A and Track B.
 4. Add a minimal encoder and benchmark harness.
-5. Only then reintroduce teacher attention distillation.
+5. Only then introduce teacher attention distillation as a BioXRep-native experiment.
 
 ## Annotated bibliography
 

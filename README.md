@@ -1,6 +1,6 @@
 # BioXRep: Cross-Notation Distillation for Invariant Biological Representation Learning
 
-This repository began as a 2021 research prototype on universal numerical representation learning by attention distillation from transliteration teachers. The project is now being reframed as **BioXRep**, a biomedical representation learning project focused on cross-notation invariance.
+**BioXRep** is a biomedical representation learning project focused on cross-notation invariance: learning representations that recover the underlying biological fact rather than overfitting to the notation used to express it.
 
 ## Research Thesis
 
@@ -58,7 +58,7 @@ In other words, the literature supports improving the supervision and objective 
 - `docs/bioxrep_experiment_roadmap.md`: staged experiment plan from synthetic benchmark to real biomedical validation.
 - `docs/bioxrep_hgvs_results.md`: frozen paper-grade HGVS result table, artifacts, and interpretation.
 - `bioxrep/data/generate_synthetic.py`: deterministic generator for synthetic BioXRep equivalence classes.
-- `data/bioxrep_synth.jsonl`: initial generated benchmark sample.
+- `/data/`: local generated benchmark and fetched public-data artifacts. This directory is intentionally ignored and can be regenerated from the commands below.
 
 ## Generate the Synthetic Benchmark
 
