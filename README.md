@@ -5,8 +5,7 @@ biological *fact* rather than the surface *notation* used to express it. The
 same gene, variant, or measurement appears as a symbol, an alias, an HGVS
 string, an opaque identifier, a lab value with units, or free text. BioXRep asks
 whether alignment and distillation signals across these parallel notations can
-teach a model to collapse them onto a shared, notation-invariant representation —
-and builds the benchmarks needed to tell whether it actually did.
+teach a model to collapse them onto a shared, notation-invariant representation
 
 ---
 
@@ -52,32 +51,22 @@ and it is where several intuitively-strong models are shown to fail.
 
 ## Results at a glance
 
-Two flagship benchmarks anchor the repository. Both are retrieval tasks scored
-against a shared candidate pool; higher is better.
-
 ### 1. HGNC gene-alias normalization (fact- and notation-disjoint)
 
 Held-out `alias_symbol` queries retrieved against the approved-symbol pool
-(~45k candidates). The `alias_symbol` notation is held out entirely — the model
-never sees it in training.
+(~45k candidates). The `alias_symbol` notation is held out for validation.
 
-| Method | MRR | Notes |
+| Method | MRR |
 | --- | ---: | --- |
-| Canonical teacher (exact structured match) | **1.000** | Upper bound — structured identity |
-| SapBERT dense | **0.134** | Off-the-shelf biomedical metric encoder |
-| Character n-gram (TF–IDF cosine) | **0.077** | Lexical floor |
-| Contrastive char-CNN student | **0.051** | *Negative result* — see below |
+| Canonical teacher (exact structured match) | **1.000**|
+| SapBERT dense | **0.134** |
+| Character n-gram (TF–IDF cosine) | **0.077** |
+| Contrastive char-CNN student | **0.051** |
 
-**The lightweight distilled student is a negative result.** A byte-level char-CNN
+**The lightweight distilled student.** A byte-level char-CNN
 (~100k params) trained with supervised contrastive loss over 22,364 HGNC
-equivalence classes reaches **0.985 in-domain validation top-1** — it trains
-correctly — yet scores only **0.051 MRR** on the held-out `alias_symbol` notation,
-*below* both the SapBERT dense retriever (0.134) and the char n-gram lexical floor
-(0.077). A small surface-only encoder has neither n-gram lexical precision nor
-SapBERT's pretrained biomedical semantics, and same-class similarity learned on
-seen notations does not transfer to an unseen short-symbol notation against a
-large pool. Reported honestly as a negative result, with full analysis in
-[`docs/bioxrep_sapbert_baseline.md`](docs/bioxrep_sapbert_baseline.md).
+equivalence classes reaches **0.985 in-domain validation top-1**  and **0.051 MRR** on the held-out `alias_symbol` notation,
+*below* both the SapBERT dense retriever (0.134) and the char n-gram. 
 
 Off-the-shelf methods trade places by notation: SapBERT dense wins most on the
 low-surface-overlap `alias_name` notation (0.316 vs. char n-gram 0.042), while
@@ -97,7 +86,7 @@ the two columns with that composition in mind.
 
 | Model | Hard top-1 | Hard top-5 | Hard MRR |
 | --- | ---: | ---: | ---: |
-| **Text-only char-CNN (scaled)** | **0.6995** | **0.9465** | **0.812** |
+| **Text-only char-CNN** | **0.6995** | **0.9465** | **0.812** |
 | Sinusoidal text+numeric CNN | 0.4875 | 0.9985 | 0.701 |
 | Masked-digit text+numeric CNN | 0.5385 | 0.9995 | 0.731 |
 | Numeric-only sinusoidal CNN | 0.3480 | 0.9840 | 0.610 |
@@ -132,13 +121,8 @@ bioxrep/
                 student flat-pool retrieval, hard-set retrieval
   train/        contrastive student trainer (mean-pool / char-CNN encoders)
   eval/         hard-candidate-set student evaluation
-docs/
-  bioxrep_research_brief.md      framing, hypotheses, method sketch
-  bioxrep_experiment_roadmap.md  staged plan: synthetic -> real biomedical
-  bioxrep_hgvs_results.md        frozen HGVS result tables and interpretation
-  bioxrep_sapbert_baseline.md    five-method HGNC alias comparison + student
 outputs/        result JSONs, trained checkpoints, comparison table + figure
-data/           generated/fetched artifacts (git-ignored, regenerable)
+data/           
 ```
 
 ---
@@ -171,7 +155,7 @@ first illustration of the notation-transfer gap.
 
 ---
 
-## Reproducing the flagship benchmarks
+## Reproducing the benchmarks
 
 ### HGNC gene-alias normalization
 
@@ -218,8 +202,7 @@ the `alias_symbol` holdout writes `342,405` train and `44,718` test rows.
 
 The full HGVS pipeline — building ClinVar HGVS classes, fact-disjoint
 position holdouts, strict position-matched hard candidate pools, and the scaled
-text-only / numeric-feature ablation matrix — is documented step-by-step in
-[`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md). Headline
+text-only / numeric-feature ablation matrix. Headline
 reproduction:
 
 ```bash
@@ -247,17 +230,13 @@ runtime initialization in this PyTorch environment.
 The repository also builds ClinVar AlleleID↔gene bridges and ClinVar
 variant-summary clinical-annotation classes (opaque-identifier and
 clinical-significance notations), plus a credentialed MIMIC-IV lab-value track
-for unit/reference-range invariance. Surface similarity is near-zero on the
-opaque-identifier tasks (MRR `0.0003`–`0.005`) while the canonical teacher is
-perfect (`1.000`), motivating structured distillation. See the fetch and build
-commands in [`docs/bioxrep_experiment_roadmap.md`](docs/bioxrep_experiment_roadmap.md).
+for unit/reference-range invariance.
 
 ---
 
 ## Related work
 
-BioXRep sits at the intersection of four literatures. The research brief and
-roadmap in `docs/` keep the working bibliography and paper-positioning notes.
+BioXRep sits at the intersection of four literatures.
 
 - **Numeracy in language models.** *Do NLP Models Know Numbers? Probing Numeracy
   in Embeddings* (Wallace et al., EMNLP 2019) shows standard embeddings capture
@@ -278,13 +257,7 @@ roadmap in `docs/` keep the working bibliography and paper-positioning notes.
   foundation models — Med-BERT, BEHRT, CLMBR, G-BERT — motivate the EHR lab-value
   track.
 
-Taken together, the literature points toward improving supervision and objective
-(multi-view contrastive training over full equivalence classes, structured
-teacher signals, explicit numeric handling, and held-out-notation evaluation)
-rather than simply scaling a generic text encoder.
-
 ---
-
 ## Reproducibility notes
 
 - `data/`, `data/raw/`, and `.hf_cache/` are git-ignored and fully regenerable
