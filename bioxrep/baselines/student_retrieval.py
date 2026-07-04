@@ -105,6 +105,8 @@ def run_retrieval(
     max_candidates: int | None,
     batch_size: int = 512,
     device: str | None = None,
+    bootstrap: bool = False,
+    bootstrap_resamples: int = 1000,
 ) -> Dict[str, object]:
     torch_device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
@@ -146,7 +148,7 @@ def run_retrieval(
         candidate_fact_ids=[str(row["fact_id"]) for row in candidates],
         rankings=rankings,
     )
-    metrics = result.to_dict()
+    metrics = result.to_dict(bootstrap=bootstrap, num_resamples=bootstrap_resamples)
     metrics.update(
         {
             "input": str(input_path),
@@ -188,6 +190,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--device", default=None)
+    parser.add_argument("--bootstrap", action="store_true", help="Add percentile bootstrap CIs to the metrics.")
+    parser.add_argument("--bootstrap-resamples", type=int, default=1000)
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -206,6 +210,8 @@ def main() -> None:
         max_candidates=args.max_candidates,
         batch_size=args.batch_size,
         device=args.device,
+        bootstrap=args.bootstrap,
+        bootstrap_resamples=args.bootstrap_resamples,
     )
     rendered = json.dumps(metrics, indent=2, sort_keys=True)
     print(rendered)

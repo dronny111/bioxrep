@@ -56,7 +56,12 @@ def form_matches_confound_key(form: Dict[str, str], confound_fields: Sequence[st
     return True
 
 
-def candidate_from_form(example: Example, form: Dict[str, str], is_positive: bool) -> Candidate:
+def candidate_from_form(
+    example: Example,
+    form: Dict[str, str],
+    is_positive: bool,
+    decoy_kind: str = "positive",
+) -> Candidate:
     return {
         "text": form["text"],
         "notation": form["notation"],
@@ -64,6 +69,9 @@ def candidate_from_form(example: Example, form: Dict[str, str], is_positive: boo
         "track": example["track"],
         "attributes": example.get("attributes", {}),
         "is_positive": is_positive,
+        # "matched" decoys share the query's confound key (a hard negative);
+        # "random" decoys are fill from the input pool and do NOT share it.
+        "decoy_kind": decoy_kind,
     }
 
 
@@ -128,7 +136,7 @@ def build_hard_benchmark(
         rng.shuffle(decoy_examples)
 
         positive_candidates = [
-            candidate_from_form(example, form, is_positive=True)
+            candidate_from_form(example, form, is_positive=True, decoy_kind="positive")
             for form in positive_forms[:positives_per_query]
         ]
         decoy_budget = max_candidates - len(positive_candidates)
@@ -138,9 +146,13 @@ def build_hard_benchmark(
             if not decoy_forms:
                 continue
             rng.shuffle(decoy_forms)
-            decoy_candidates.append(candidate_from_form(decoy, decoy_forms[0], is_positive=False))
+            decoy_candidates.append(
+                candidate_from_form(decoy, decoy_forms[0], is_positive=False, decoy_kind="matched")
+            )
             if len(decoy_candidates) >= decoy_budget:
                 break
+
+        matched_decoy_count = len(decoy_candidates)
 
         if fill_random_decoys and len(decoy_candidates) < decoy_budget:
             matched_fact_ids = {candidate["fact_id"] for candidate in decoy_candidates}
@@ -155,9 +167,13 @@ def build_hard_benchmark(
                 if not decoy_forms:
                     continue
                 rng.shuffle(decoy_forms)
-                decoy_candidates.append(candidate_from_form(decoy, decoy_forms[0], is_positive=False))
+                decoy_candidates.append(
+                    candidate_from_form(decoy, decoy_forms[0], is_positive=False, decoy_kind="random")
+                )
                 if len(decoy_candidates) >= decoy_budget:
                     break
+
+        random_decoy_count = len(decoy_candidates) - matched_decoy_count
 
         if len(decoy_candidates) < min_decoys:
             continue
@@ -178,6 +194,8 @@ def build_hard_benchmark(
                     "candidate_notation": candidate_notation,
                     "confound_fields": list(confound_fields),
                     "confound_values": dict(zip(confound_fields, key)),
+                    "matched_decoy_count": matched_decoy_count,
+                    "random_decoy_count": random_decoy_count,
                     "candidates": candidates,
                 }
             )
@@ -246,9 +264,23 @@ def main() -> None:
 
     write_jsonl(records, args.output)
     avg_candidates = sum(len(record["candidates"]) for record in records) / len(records)
+    total_matched = sum(record["matched_decoy_count"] for record in records)
+    total_random = sum(record["random_decoy_count"] for record in records)
+    total_decoys = total_matched + total_random
+    matched_fraction = total_matched / total_decoys if total_decoys else 0.0
+    avg_matched = total_matched / len(records)
+    all_hard = sum(1 for record in records if record["random_decoy_count"] == 0)
     print(
         f"Wrote {len(records)} hard retrieval queries to {args.output} "
         f"(avg candidates/query: {avg_candidates:.2f})"
+    )
+    print(
+        "Decoy composition: "
+        f"{matched_fraction:.1%} of decoys are confound-matched hard negatives "
+        f"(avg {avg_matched:.2f} matched/query); "
+        f"{all_hard}/{len(records)} queries have an all-hard pool (no random fill). "
+        "Matched decoys share the query's confound key; random-fill decoys do not — "
+        "report top-k with this composition in mind."
     )
 
 

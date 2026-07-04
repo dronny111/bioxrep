@@ -68,6 +68,34 @@ MRR / top-1 / top-5 over `2,000` queries against the `44,997`-symbol pool.
 
 ![BioXRep student vs char n-gram, SapBERT dense, and BioSyn hybrid MRR across three HGNC alias notations, with canonical-teacher oracle off-scale at 1.00](../outputs/hgnc_alias_comparison_figure.png)
 
+## Statistical reporting
+
+The numbers above are single-run point estimates over `2,000` queries. For
+paper-grade reporting, add `--bootstrap` to any of the retrieval commands
+(`char_ngram_retrieval`, `sapbert_retrieval`, `student_retrieval`) to emit
+percentile bootstrap 95% CIs (`{top1,top5,mean_reciprocal_rank}_ci_{low,high}`),
+and re-run the learned student across several `--seed` values to report mean ± std,
+e.g.:
+
+```bash
+for seed in 11 13 17 19 23; do
+  HF_HUB_OFFLINE=1 PYTHONPATH=. python3 -m bioxrep.train.train_contrastive_student \
+    --class-input data/bioxrep_hgnc_aliases_train_classes.jsonl \
+    --class-notations approved_symbol,prev_symbol,alias_name,prev_name,approved_name \
+    --forms-per-class 4 --valid-input data/bioxrep_hgnc_aliases_valid_pairs.jsonl \
+    --output-dir outputs/contrastive_student_hgnc_alias_seed${seed} \
+    --encoder cnn --hidden-dim 64 --projection-dim 128 --epochs 3 --batch-size 128 --max-length 64 --seed ${seed}
+  HF_HUB_OFFLINE=1 PYTHONPATH=. python3 -m bioxrep.baselines.student_retrieval \
+    --checkpoint outputs/contrastive_student_hgnc_alias_seed${seed}/char_cnn_student.pt \
+    --input data/bioxrep_hgnc_alias_symbol_heldout.jsonl --track gene_alias \
+    --query-notation alias_symbol --query-split test --candidate-notation approved_symbol --candidate-split train \
+    --max-queries 2000 --bootstrap --output outputs/student_hgnc_alias_symbol_heldout_seed${seed}.json
+done
+```
+
+Because the candidate pool encodes deterministically, bootstrap CIs capture
+query-sampling variance; the seed sweep captures training/init variance.
+
 ## Interpretation
 
 The gap between query notations is the story. On `alias_name`, where surface overlap with the approved symbol is minimal, SapBERT dense lifts MRR from `0.042` (lexical) to `0.316` — roughly a 7.5x improvement — because the semantic encoder recognizes descriptive names that share no characters with the symbol. On `prev_symbol`, where surface overlap is high, the lexical baseline is already competitive (`0.205` MRR) and the dense-only gain is small; here the BioSyn hybrid is best (`0.250` MRR), confirming that sparse and dense signal are complementary when both are informative.
@@ -80,7 +108,7 @@ The canonical teacher is a structured oracle: it matches on the HGNC `symbol` at
 
 The trained student does **not** beat SapBERT dense on the fact-disjoint `alias_symbol` task — the task it was added to contest. It scores `0.051` MRR, below both SapBERT dense (`0.134`) and the char n-gram lexical floor (`0.077`). This is a clean negative result and is reported as such.
 
-Two factors explain it. First, `alias_symbol` is a held-out **notation**, not just held-out facts: the student never sees a single `alias_symbol` form in training, so it must transfer from other short-symbol notations (`approved_symbol`, `prev_symbol`) whose surface statistics only partly overlap. Second, a ~100k-parameter byte-level char-CNN encodes little beyond character composition; on short alias symbols that share few characters with the approved symbol, it has neither the lexical precision of TF-IDF n-grams nor the biomedical semantics SapBERT acquired from UMLS self-alignment. The in-domain validation top-1 of `0.985` on symbol↔name pairs confirms the model trained correctly — it simply learned a same-class similarity that does not transfer to unseen short-symbol notations against a 45k-way pool.
+Two factors explain it. First, `alias_symbol` is a held-out **notation**, not just held-out facts: the student never sees a single `alias_symbol` form in training, so it must transfer from other short-symbol notations (`approved_symbol`, `prev_symbol`) whose surface statistics only partly overlap. Second, a ~100k-parameter byte-level char-CNN encodes little beyond character composition; on short alias symbols that share few characters with the approved symbol, it has neither the lexical precision of TF-IDF n-grams nor the biomedical semantics SapBERT acquired from UMLS self-alignment. The in-domain validation top-1 of `0.985` on symbol↔name pairs confirms the model trained correctly — but note this is an **in-batch** retrieval number (each left form ranked against the ~128 right forms in its batch), not retrieval against the 45k-symbol pool, so it is not directly comparable to the `0.051` pool MRR. It simply confirms the model learned a same-class similarity that does not transfer to unseen short-symbol notations against a 45k-way pool.
 
 The two `train-seen` rows are consistent with this reading: even where the query notation was in the training distribution (`prev_symbol` MRR `0.158`, `alias_name` MRR `0.042`), the small char encoder still trails the off-the-shelf baselines. It carries some lexical signal on `prev_symbol` (which overlaps approved symbols) but collapses to the lexical floor on the free-text `alias_name`, where it has no semantic capacity.
 
@@ -113,8 +141,22 @@ The `prev_symbol` and `alias_name` runs use `--query-notation prev_symbol` / `--
 Build the fact-disjoint training class file (excludes the `alias_symbol` test gene `fact_id`s), then train the class-aware char-CNN student:
 
 ```bash
-# 1) filter equivalence classes to exclude alias_symbol test facts -> data/bioxrep_hgnc_aliases_train_classes.jsonl
+# 1) filter equivalence classes to EXCLUDE the alias_symbol test facts.
+#    The reference file is the held-out test split; --mode exclude drops any class
+#    whose fact_id appears there, leaving a fact-disjoint training pool.
+python3 -m bioxrep.data.filter_equivalence_classes \
+  --input data/bioxrep_hgnc_aliases.jsonl \
+  --reference data/bioxrep_hgnc_alias_symbol_heldout.jsonl \
+  --output data/bioxrep_hgnc_aliases_train_classes.jsonl \
+  --mode exclude
 #    (also build a small left/right valid-pairs file for pair-loss monitoring)
+
+# 1b) VERIFY no fact or notation leakage before training (fails loudly if either leaks).
+#     alias_symbol must be absent from the training classes and present in the test split.
+python3 scripts/verify_no_leakage.py \
+  --train data/bioxrep_hgnc_aliases_train_classes.jsonl \
+  --test data/bioxrep_hgnc_alias_symbol_heldout.jsonl \
+  --test-split test --heldout-notation alias_symbol
 
 # 2) train
 HF_HUB_OFFLINE=1 OMP_NUM_THREADS=8 PYTHONPATH=. python3 -m bioxrep.train.train_contrastive_student \

@@ -201,6 +201,8 @@ def run_retrieval(
     pooling: str = "cls",
     batch_size: int = 128,
     max_length: int = 32,
+    bootstrap: bool = False,
+    bootstrap_resamples: int = 1000,
 ) -> Dict[str, object]:
     loaded_rows = read_jsonl(input_path)
     if loaded_rows and "forms" in loaded_rows[0]:
@@ -249,7 +251,7 @@ def run_retrieval(
         candidate_fact_ids=[str(row["fact_id"]) for row in candidates],
         rankings=rankings,
     )
-    metrics = result.to_dict()
+    metrics = result.to_dict(bootstrap=bootstrap, num_resamples=bootstrap_resamples)
     metrics.update(
         {
             "input": str(input_path),
@@ -295,6 +297,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pooling", choices=["cls", "mean"], default="cls")
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--max-length", type=int, default=32)
+    parser.add_argument("--bootstrap", action="store_true", help="Add percentile bootstrap CIs to the metrics.")
+    parser.add_argument("--bootstrap-resamples", type=int, default=1000)
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -316,6 +320,8 @@ def main() -> None:
         pooling=args.pooling,
         batch_size=args.batch_size,
         max_length=args.max_length,
+        bootstrap=args.bootstrap,
+        bootstrap_resamples=args.bootstrap_resamples,
     )
     rendered = json.dumps(metrics, indent=2, sort_keys=True)
     print(rendered)
