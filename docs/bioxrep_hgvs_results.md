@@ -4,13 +4,37 @@ This note freezes the first paper-grade BioXRep genomic/protein notation result.
 
 ## Task
 
-Retrieve nucleotide HGVS forms for a protein HGVS query under fact-disjoint train/test splits. The strict hard benchmark prevents position-only shortcuts by constructing candidate pools where decoys share the query's parsed `protein_position` and `cdna_position`, then fills to a fixed candidate count with test-only decoys.
+Retrieve nucleotide HGVS forms for a protein HGVS query under fact-disjoint train/test splits. The hard benchmark targets position-only shortcuts by guaranteeing each query **at least one** decoy that shares its parsed `protein_position` and `cdna_position` (`--min-decoys 1`), then fills the remaining candidate slots to a fixed pool size with random test-only decoys (`--fill-random-decoys`). Because only the matched decoys are position-confounded, the pool is a mix of hard and easy negatives; the builder reports the realized matched-vs-random composition, and `top-5` in particular is inflated relative to `top-1` because the random-fill decoys are trivially separable on position. To build an all-hard pool instead, raise `--min-decoys` and drop `--fill-random-decoys` (queries without enough matched decoys are then skipped).
 
 ## Dataset
 
 Source artifact:
 
 - `data/bioxrep_clinvar_hgvs_variants_numeric_50k.jsonl`
+
+### Source artifact provenance
+
+The reproduction below starts from `bioxrep_clinvar_hgvs_variants_numeric_50k.jsonl`.
+That file is built from public ClinVar HGVS as follows (this chain must be run
+first — it is the one place the pipeline is not self-contained from the frozen
+split command):
+
+```bash
+# Fetch ClinVar HGVS + HGNC, then build cross-notation HGVS equivalence classes.
+python3 -m bioxrep.data.fetch_public clinvar_hgvs
+python3 -m bioxrep.data.fetch_public hgnc_complete_set
+python3 -m bioxrep.data.build_clinvar_hgvs_variants \
+  --hgvs data/raw/clinvar_hgvs/hgvs4variation.txt.gz \
+  --hgnc data/raw/hgnc_complete_set/hgnc_complete_set.txt \
+  --output data/bioxrep_clinvar_hgvs_variants.jsonl
+# The `_numeric_50k` artifact is this file with parsed protein_position/cdna_position
+# numeric attributes populated and capped to 50k classes. Record the exact enrichment
+# command in this doc when regenerating so the source is not circular.
+```
+
+`build_clinvar_hgvs_variants` already parses `protein_position` and `cdna_position`
+(see `parse_protein_position` / `parse_nucleotide_position`), which are the confound
+fields the hard benchmark matches on.
 
 Scaled fact split:
 
@@ -41,9 +65,9 @@ All learned models use the same lightweight character CNN encoder and are evalua
 
 ## Interpretation
 
-The scaled strict benchmark is not solved by numeric shortcuts. Numeric features make old pair retrieval look perfect and push hard top-5 very high, but they reduce hard top-1 relative to the text-only CNN. The text-only model is the strongest top-1 model, and masked-digit text still beats numeric-only, showing that non-digit sequence context carries notation-invariant signal.
+The benchmark is not solved by numeric shortcuts. Numeric features make old pair retrieval look perfect and push hard top-5 very high — but part of that top-5 lift comes from the random-fill decoys, which any position feature rejects trivially, so top-5 overstates hard-negative discrimination. The decisive column is hard top-1, evaluated against the position-matched decoys, and there the numeric features *reduce* accuracy: the numeric component is identical for the positive and its confounded negatives, so it only dilutes the text signal. The text-only model is the strongest top-1 model, and masked-digit text still beats numeric-only, showing that non-digit sequence context carries notation-invariant signal.
 
-For paper framing, report text-only representation learning separately from numeric-feature upper-bound or teacher-feature models.
+Two caveats for paper framing. (1) All rows above are trained at the same 50k-pair scale, so this table isolates the numeric-feature ablation; any claim about training-scale ("more facts") must cite the separate small-vs-large runs, not this table. (2) Within a shared-position pool, distinguishing the positive nucleotide form from its position-matched decoys largely reduces to mapping the amino-acid substitution to the correct codon change — i.e. the model is rewarded for learning genetic-code structure, which is a specific and worthwhile capability but narrower than "notation invariance" in general. Report text-only representation learning separately from numeric-feature upper-bound or teacher-feature models, and report the realized decoy composition alongside the metrics.
 
 ## Reproduction
 
@@ -56,12 +80,31 @@ python3 -m bioxrep.data.build_pairs --input data/bioxrep_clinvar_hgvs_variants_n
 python3 -m bioxrep.data.build_hard_retrieval_benchmark --input data/bioxrep_clinvar_hgvs_variants_numeric_scaled_test_10k.jsonl --output data/bioxrep_clinvar_hgvs_scaled_test_hard_protein_cdna_filled20_2k.jsonl --query-notation protein_expression --candidate-notation nucleotide_expression --confound-fields protein_position,cdna_position --min-decoys 1 --max-queries 2000 --max-candidates 20 --fill-random-decoys --seed 37
 ```
 
+The builder prints the realized decoy composition (fraction of confound-matched
+hard negatives, average matched/query, and how many queries got an all-hard pool);
+each record also carries `matched_decoy_count` / `random_decoy_count`, and the hard
+eval reports `avg_matched_decoys` / `matched_decoy_fraction`. With `--min-decoys 1
+--fill-random-decoys` most decoys are random fill, so `top-5` is easier than
+`top-1`; for an all-hard pool raise `--min-decoys` and drop `--fill-random-decoys`.
+
+Verify the split is fact-disjoint before training:
+
+```bash
+python3 scripts/verify_no_leakage.py \
+  --train data/bioxrep_clinvar_hgvs_variants_numeric_scaled_train_40k.jsonl \
+  --test data/bioxrep_clinvar_hgvs_variants_numeric_scaled_test_10k.jsonl
+```
+
 Train and evaluate the strongest model:
 
 ```bash
 KMP_DUPLICATE_LIB_OK=TRUE python3 -m bioxrep.train.train_contrastive_student --input data/bioxrep_clinvar_hgvs_scaled_train_pairs_50k.jsonl --valid-input data/bioxrep_clinvar_hgvs_scaled_test_pairs_20k.jsonl --max-valid-pairs 5000 --hard-valid-input data/bioxrep_clinvar_hgvs_scaled_test_hard_protein_cdna_filled20_2k.jsonl --max-hard-valid-queries 500 --output-dir outputs/contrastive_student_hgvs_scaled_pair_textonly_50k --encoder cnn --epochs 3 --batch-size 128 --max-length 160 --hidden-dim 64 --projection-dim 128 --attribute-fields variation_id --attribute-loss-weight 0.2
-KMP_DUPLICATE_LIB_OK=TRUE python3 -m bioxrep.eval.hard_student_retrieval --checkpoint outputs/contrastive_student_hgvs_scaled_pair_textonly_50k/char_cnn_student.pt --input data/bioxrep_clinvar_hgvs_scaled_test_hard_protein_cdna_filled20_2k.jsonl --output outputs/hard_eval_scaled_pair_textonly_50k_protein_cdna_filled20_2k.json
+KMP_DUPLICATE_LIB_OK=TRUE python3 -m bioxrep.eval.hard_student_retrieval --checkpoint outputs/contrastive_student_hgvs_scaled_pair_textonly_50k/char_cnn_student.pt --input data/bioxrep_clinvar_hgvs_scaled_test_hard_protein_cdna_filled20_2k.jsonl --bootstrap --output outputs/hard_eval_scaled_pair_textonly_50k_protein_cdna_filled20_2k.json
 ```
+
+Add `--bootstrap` (as above) to emit 95% percentile-bootstrap CIs on `top1`,
+`top5`, and `mean_reciprocal_rank`. For training/init variance, sweep `--seed`
+across several values (e.g. `11 13 17 19 23`) and report mean ± std of hard top-1.
 
 ## Result Artifacts
 

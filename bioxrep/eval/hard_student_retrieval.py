@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Mapping, Sequence
 import torch
 
 from bioxrep.data.io import read_jsonl
+from bioxrep.eval.retrieval import bootstrap_ci
 from bioxrep.models.char_encoder import CharCNNEncoder, CharMeanEncoder
 from bioxrep.train.train_contrastive_student import (
     ContrastiveStudent,
@@ -123,7 +124,13 @@ def reciprocal_rank(labels: Sequence[bool], ranking: Sequence[int]) -> float:
 
 
 @torch.no_grad()
-def evaluate_hard_set(checkpoint_path: Path, input_path: Path, device: torch.device) -> Dict[str, Any]:
+def evaluate_hard_set(
+    checkpoint_path: Path,
+    input_path: Path,
+    device: torch.device,
+    bootstrap: bool = False,
+    bootstrap_resamples: int = 1000,
+) -> Dict[str, Any]:
     records = read_jsonl(input_path)
     if not records:
         raise ValueError("No hard retrieval records were provided")
@@ -131,8 +138,12 @@ def evaluate_hard_set(checkpoint_path: Path, input_path: Path, device: torch.dev
     model, args, numeric_field_stats = load_student(checkpoint_path, device)
     top1_hits = 0
     top5_hits = 0
+    top1_flags: List[float] = []
+    top5_flags: List[float] = []
     reciprocal_ranks: List[float] = []
     candidate_counts: List[int] = []
+    matched_decoy_counts: List[int] = []
+    random_decoy_counts: List[int] = []
 
     for record in records:
         query = record["query"]
@@ -161,14 +172,19 @@ def evaluate_hard_set(checkpoint_path: Path, input_path: Path, device: torch.dev
         labels = [bool(candidate.get("is_positive")) for candidate in record["candidates"]]
 
         reciprocal_ranks.append(reciprocal_rank(labels, ranking))
-        if ranking and labels[ranking[0]]:
-            top1_hits += 1
-        if any(labels[idx] for idx in ranking[:5]):
-            top5_hits += 1
+        is_top1 = 1.0 if (ranking and labels[ranking[0]]) else 0.0
+        is_top5 = 1.0 if any(labels[idx] for idx in ranking[:5]) else 0.0
+        top1_hits += int(is_top1)
+        top5_hits += int(is_top5)
+        top1_flags.append(is_top1)
+        top5_flags.append(is_top5)
         candidate_counts.append(len(record["candidates"]))
+        matched_decoy_counts.append(int(record.get("matched_decoy_count", 0)))
+        random_decoy_counts.append(int(record.get("random_decoy_count", 0)))
 
     query_count = len(records)
-    return {
+    total_decoys = sum(matched_decoy_counts) + sum(random_decoy_counts)
+    metrics: Dict[str, Any] = {
         "checkpoint": str(checkpoint_path),
         "input": str(input_path),
         "top1": top1_hits / query_count,
@@ -178,12 +194,24 @@ def evaluate_hard_set(checkpoint_path: Path, input_path: Path, device: torch.dev
         "avg_candidates": sum(candidate_counts) / query_count,
         "min_candidates": min(candidate_counts),
         "max_candidates": max(candidate_counts),
+        # Pool composition, so top-k is read against how many decoys are truly hard.
+        "avg_matched_decoys": sum(matched_decoy_counts) / query_count,
+        "avg_random_decoys": sum(random_decoy_counts) / query_count,
+        "matched_decoy_fraction": (sum(matched_decoy_counts) / total_decoys) if total_decoys else None,
         "encoder": args.get("encoder"),
         "numeric_fields": list(numeric_field_stats),
         "numeric_feature_mode": args.get("numeric_feature_mode", "none"),
         "text_transform": args.get("text_transform", "none"),
         "text_weight": args.get("text_weight", 1.0),
     }
+    if bootstrap:
+        metrics["confidence_level"] = 0.95
+        metrics["bootstrap_resamples"] = bootstrap_resamples
+        for name, flags in (("top1", top1_flags), ("top5", top5_flags), ("mean_reciprocal_rank", reciprocal_ranks)):
+            low, high = bootstrap_ci(flags, num_resamples=bootstrap_resamples)
+            metrics[f"{name}_ci_low"] = low
+            metrics[f"{name}_ci_high"] = high
+    return metrics
 
 
 def parse_args() -> argparse.Namespace:
@@ -192,6 +220,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    parser.add_argument("--bootstrap", action="store_true", help="Add percentile bootstrap CIs to the metrics.")
+    parser.add_argument("--bootstrap-resamples", type=int, default=1000)
     return parser.parse_args()
 
 
@@ -201,7 +231,13 @@ def main() -> None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device(args.device)
-    metrics = evaluate_hard_set(args.checkpoint, args.input, device)
+    metrics = evaluate_hard_set(
+        args.checkpoint,
+        args.input,
+        device,
+        bootstrap=args.bootstrap,
+        bootstrap_resamples=args.bootstrap_resamples,
+    )
     rendered = json.dumps(metrics, indent=2, sort_keys=True)
     print(rendered)
     if args.output is not None:
