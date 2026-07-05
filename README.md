@@ -19,10 +19,13 @@ validated method result. Read the claims with that scope:
   (char n-gram lexical floor, SapBERT dense, BioSyn-style hybrid, canonical-teacher
   oracle ceiling); and a lightweight contrastive char-CNN student with a
   supervised-contrastive + optional attribute/numeric-consistency objective.
-- **Not yet delivered:** the *teacher attention/embedding distillation* named in the
-  title. The current student trains with contrastive and auxiliary losses only — no
-  teacher is distilled. "Distillation" is the roadmap direction, not an implemented
-  component.
+  The trainer also includes an optional deterministic byte/digit alignment
+  teacher (`--attention-distillation-weight`) that distills cross-character
+  attention distributions into the student.
+- **Not yet delivered:** a trained neural seq2seq notation-translator teacher or
+  positive method result from the attention-distillation objective. The current
+  distillation path is an implemented alignment-teacher baseline; the roadmap's
+  stronger neural teacher remains an experiment to run.
 - **Headline method result is negative.** On the protagonist fact- and
   notation-disjoint task (`alias_symbol`), the trained student loses to SapBERT and
   to the lexical floor. The repository therefore does **not** yet contain positive
@@ -120,7 +123,7 @@ bioxrep/
   baselines/    char n-gram, SapBERT dense, BioSyn hybrid, canonical teacher,
                 student flat-pool retrieval, hard-set retrieval
   train/        contrastive student trainer (mean-pool / char-CNN encoders)
-  eval/         hard-candidate-set student evaluation
+  eval/         hard-candidate-set student evaluation, invariance-ratio metric
 outputs/        result JSONs, trained checkpoints, comparison table + figure
 data/           
 ```
@@ -131,7 +134,7 @@ data/
 
 ```bash
 conda create -n bioxrep-sapbert python=3.11 -y && conda activate bioxrep-sapbert
-pip install torch numpy scikit-learn transformers
+pip install torch numpy scikit-learn transformers pytest
 ```
 
 SapBERT/BioSyn baselines download `cambridgeltl/SapBERT-from-PubMedBERT-fulltext`
@@ -189,6 +192,23 @@ HF_HUB_OFFLINE=1 OMP_NUM_THREADS=8 PYTHONPATH=. python3 -m bioxrep.baselines.stu
   --input data/bioxrep_hgnc_alias_symbol_heldout.jsonl --track gene_alias \
   --query-notation alias_symbol --query-split test --candidate-notation approved_symbol --candidate-split train \
   --max-queries 2000 --bootstrap --output outputs/student_hgnc_alias_symbol_heldout.json
+```
+
+To enable the implemented alignment-teacher distillation objective, add for
+example `--attention-distillation-weight 0.1`. This supervises the student's
+token-level cross-attention against a deterministic byte/digit alignment teacher
+and records `train_attention_distillation_loss` / `valid_attention_distillation_loss`
+in the result history.
+
+Compute the promised invariance ratio (between-class / within-class cosine
+distance) for any saved student checkpoint:
+
+```bash
+PYTHONPATH=. python3 -m bioxrep.eval.invariance_ratio \
+  --checkpoint outputs/contrastive_student_hgnc_alias/char_cnn_student.pt \
+  --input data/bioxrep_hgnc_aliases_train_classes.jsonl \
+  --track gene_alias --notations approved_symbol,prev_symbol,alias_name,prev_name,approved_name \
+  --output outputs/hgnc_alias_invariance_ratio.json
 ```
 
 Pass `--bootstrap` to any retrieval command to add 95% bootstrap CIs, and sweep

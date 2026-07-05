@@ -16,12 +16,15 @@ class CharMeanEncoder(nn.Module):
         )
 
     def forward(self, token_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        embeddings = self.embedding(token_ids)
-        masked = embeddings * mask.unsqueeze(-1)
+        features = self.token_features(token_ids, mask)
+        masked = features * mask.unsqueeze(-1)
         lengths = mask.sum(dim=1).clamp_min(1.0).unsqueeze(-1)
         pooled = masked.sum(dim=1) / lengths
         projected = self.projection(pooled)
         return F.normalize(projected, dim=-1)
+
+    def token_features(self, token_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        return self.embedding(token_ids)
 
 
 class CharCNNEncoder(nn.Module):
@@ -47,13 +50,18 @@ class CharCNNEncoder(nn.Module):
         )
 
     def forward(self, token_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        embeddings = self.embedding(token_ids).transpose(1, 2)
+        features_by_position = self.token_features(token_ids, mask).transpose(1, 2)
         pooled_outputs = []
         expanded_mask = mask.unsqueeze(1)
-        for conv in self.convs:
-            features = F.gelu(conv(embeddings))
-            features = features.masked_fill(expanded_mask == 0, -1e4)
-            pooled_outputs.append(features.max(dim=2).values)
+        for start in range(0, features_by_position.shape[1], self.convs[0].out_channels):
+            features = features_by_position[:, start : start + self.convs[0].out_channels, :]
+            masked_features = features.masked_fill(expanded_mask == 0, -1e4)
+            pooled_outputs.append(masked_features.max(dim=2).values)
         pooled = torch.cat(pooled_outputs, dim=1)
         projected = self.projection(self.dropout(pooled))
         return F.normalize(projected, dim=-1)
+
+    def token_features(self, token_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        embeddings = self.embedding(token_ids).transpose(1, 2)
+        features = [F.gelu(conv(embeddings)).transpose(1, 2) for conv in self.convs]
+        return torch.cat(features, dim=2) * mask.unsqueeze(-1)

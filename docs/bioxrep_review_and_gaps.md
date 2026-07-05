@@ -1,0 +1,166 @@
+# BioXRep: Work-So-Far Review and Gap Analysis
+
+A review of the project state as of this snapshot: research brief, staged roadmap,
+the two frozen results docs (HGNC alias, HGVS), the `bioxrep/` package, the paper
+draft (`main.tex`), and the saved artifact store.
+
+## What's solid
+
+The project is in good shape as a **benchmark-and-honest-baselines** effort.
+
+- **Two real biomedical benchmarks built from public sources.** HGNC gene-alias
+  equivalence classes (44,997 classes -> ~387k forms) and ClinVar HGVS
+  protein<->nucleotide classes (29,076 train / 7,270 test), both with genuinely
+  fact-disjoint splits and a `verify_no_leakage.py` guardrail that fails loudly
+  on fact *or* notation leakage.
+- **Rigorous evaluation design.** The HGVS "strict hard pool" (decoys share the
+  query's parsed `protein_position` + `cdna_position`) is the standout
+  contribution: it correctly exposes numeric-position features as shortcuts
+  (top-5 ~= 1.0 but hard top-1 *drops*), and shows text-only + more facts wins on
+  hard top-1 (0.6995 vs 0.4875 sinusoidal).
+- **Intellectually honest reporting.** The HGNC char-CNN student is written up as
+  a clean negative result (0.051 MRR, below both the lexical floor 0.077 and
+  SapBERT dense 0.134), with the in-domain 0.985 top-1 shown as the trap a
+  disjoint split avoids.
+- **A near-submittable short paper** (`main.tex`) with CrossRef/OpenAlex/arXiv-
+  verified references, reframed around the negative result.
+
+## Gaps (roughly by severity)
+
+### 1. The full neural namesake method is not implemented (highest severity)
+The repo is *"...by attention distillation,"* and the brief's Phase 3 core
+hypothesis is that distilling a neural teacher's cross-attention/alignment into
+the student produces notation invariance. The code now includes an optional
+deterministic byte/digit alignment teacher and bidirectional attention KL loss in
+`bioxrep.train.train_contrastive_student` (`--attention-distillation-weight`), so
+the repo has an implemented alignment-distillation baseline. It now also includes
+a **trained neural teacher** path (`--attention-teacher-checkpoint`): a frozen,
+higher-capacity char-CNN student (valid top-1 0.677 vs the student's 0.582) whose
+learned attention `softmax(f_s f_t^T / sqrt(d))` is the KL target. A three-arm
+ablation (contrastive-only / byte-rule teacher / neural teacher, identical student
+config, seed 13) has now been **run and recorded** (`outputs/ab_eval/`,
+`ab_summary_3arm.json`): held-out `alias_symbol` MRR 0.050 / 0.054 / 0.050 with
+overlapping bootstrap intervals, and invariance ratio *worsening* monotonically
+0.753 -> 0.769 -> 0.804. **Neither teacher closes the gap.** The still-absent
+variant is distillation from a *semantically pretrained* teacher (SapBERT-strength),
+which the surface-only attention teachers here do not supply. The central thesis
+is therefore no longer *under-instrumented*: the namesake mechanism was tested in
+both heuristic and trained-neural forms and *did not help*; the limitation is the
+surface-only student's representational capacity, not the teacher's quality.
+
+### 2. There is no positive method result
+HGNC is a negative result; the HGVS "win" is a scaling/ablation finding (text-only
++ more data beats numeric shortcuts), not evidence the *proposed* objective beats
+a strong off-the-shelf baseline. No experiment shows a BioXRep-trained encoder
+beating SapBERT on a disjoint task. As written, the affirmative contribution is a
+benchmark + a negative result — a legitimate BioNLP paper, but not the method
+paper the brief describes.
+
+### 3. Track B (clinical lab-value / unit invariance) is scaffolding only
+The synthetic generator has lab/unit fields, but there are no real MIMIC-IV
+results, no unit-held-out numbers, and the numeric-consistency loss (`L_numeric`)
+isn't evaluated. The brief's "one method, two instantiations" shape has only one
+instantiation.
+
+### 4. Interpretability and invariance metrics are only partly implemented
+The brief promises attribute probing, an invariance ratio (between-class /
+within-class distance), and embedding visualization. The trainer *has*
+attribute/numeric heads, and `bioxrep.eval.invariance_ratio` now computes the
+distance ratio for saved student checkpoints. No invariance-ratio result,
+probing table, or embedding visualization is frozen anywhere yet.
+
+### 5. No statistical rigor in the frozen tables
+Both docs mention `--bootstrap` CIs and multi-seed sweeps as *available*, but every
+headline number is a single-seed point estimate. ACL/BioNLP reviewers will ask for
+mean +/- std over seeds and CIs — especially since several conclusions rest on
+gaps like 0.051 vs 0.077.
+
+### 6. Reproducibility gap between docs and stored artifacts
+The HGNC comparison outputs and HGNC student checkpoint are saved as artifacts,
+but **none of the HGVS result JSONs or HGVS checkpoints referenced in
+`bioxrep_hgvs_results.md` are in the artifact store** — they exist only on local
+disk. The "fully reproducible" claim isn't backed by saved provenance for the
+HGVS flagship.
+
+### 7. Baseline coverage is narrower than the brief
+Implemented: char n-gram, char-CNN, SapBERT dense, BioSyn hybrid, canonical
+teacher. Missing from the brief's list: a subword-transformer encoder, a
+digit-token numeric encoder, and an **xVal-style continuous numeric baseline** —
+notable because xVal is a headline citation motivating the whole numeric angle.
+
+### 8. Tests / CI are minimal
+A lightweight `pytest` suite and GitHub Actions workflow now cover retrieval
+metrics, invariance-distance helpers, and the attention-distillation math. This
+closes the complete-absence gap, but coverage is still narrow and does not yet
+exercise public-data builders or end-to-end training runs.
+
+### 9. Task well-posedness worth a sentence
+On `alias_symbol` every method scores MRR <= 0.134, and the canonical teacher
+trivially scores 1.000 by matching the structured `symbol` field it's keyed on. A
+short headroom/ceiling analysis would preempt the reviewer question of whether the
+hardest task is near-unsolvable as posed.
+
+### 10. Minor hygiene
+Real PhysioNet credentials sit in plaintext at `bioxrep/.env`. Verified: it is
+gitignored and was **never committed** (low risk), but it lives in a writable
+workspace folder. A root `.env.example` with empty keys is now present for safer
+setup.
+
+## Code audit addendum (verified against the repo, not the artifact snapshot)
+
+A direct read of `bioxrep/` confirms the reconciliation above and adds four
+implementation-level findings:
+
+- **The distillation teacher is a fixed heuristic, not a learned model.**
+  `byte_alignment_teacher_probs` builds the target attention distribution by rule:
+  exact byte match gets mass `2.0`, any digit-to-digit match `1.0`, and rows with
+  no match fall back to uniform over valid target positions. The student attention
+  is `softmax(source_features . target_features^T / sqrt(d))` over token features,
+  distilled bidirectionally (L->R and R->L averaged) via KL. This is genuine
+  attention-*map* distillation in structure, but the "teacher" carries no learned
+  parameters. If the title keeps "by attention distillation," the rule-based vs.
+  neural-teacher distinction must be explicit or it reads as an overclaim.
+- **Both auxiliary losses default to off; the attention path is now exercised.**
+  `--attention-distillation-weight` and `--numeric-loss-weight` both default to
+  `0.0`. The attention-distillation path is no longer only wired and unit-tested:
+  the three-arm ablation above switches it on (weight 0.1) for both the byte-rule
+  and neural-teacher forms and records the result. Gap #3 (numeric loss, Track B)
+  remains "under-instrumented, not disproven": no frozen result exercises
+  `--numeric-loss-weight > 0` yet.
+- **Byte-offset digit check is correct (not a bug).** The teacher tests
+  `id in [ord("0")+1, ord("9")+1]`; `encode_text_tensors` maps every byte to
+  `byte + 1` (reserving `0` for `padding_idx`), so the `+1` offset is intentional
+  and consistent end-to-end.
+- **`CharCNNEncoder.forward` has an undocumented channel-coupling assumption.**
+  The pooling loop strides by `self.convs[0].out_channels`, implicitly requiring
+  every conv to share `out_channels == hidden_dim`. It holds under the current
+  constructor but would silently mis-pool if kernel widths ever had heterogeneous
+  channel counts; an assert or comment would harden it.
+
+Test coverage is real but shallow: the suite exercises teacher-probability math,
+loss finiteness, ranking metrics, and invariance-helper determinism (the pure
+functions), but touches neither the data builders (`build_*`, `fetch_public`) nor
+any end-to-end training step. CI installs torch/sklearn and runs `pytest -q` on
+push and PR.
+
+One live-hygiene note: `bioxrep/.env` (59 bytes, real PhysioNet credentials) still
+exists in the writable workspace folder. It is untracked and gitignored (low leak
+risk), but now that `.env.example` exists the real file no longer needs to persist
+between sessions.
+
+## Suggested priorities
+
+1. **Done — neural attention-distillation teacher tested.** A frozen
+   higher-capacity char-CNN teacher was trained and its learned attention distilled
+   into the student; the three-arm ablation (contrastive / byte-rule / neural) is
+   recorded in `outputs/ab_eval/` and written into `main.tex` (§ ablation). Neither
+   teacher closes the disjoint `alias_symbol` gap. The remaining, higher-cost
+   variant is distillation from a *semantically pretrained* (SapBERT-strength)
+   teacher on the same byte grid — the surface-only teachers tested here do not
+   substitute for it.
+2. **Cheap, high-value for the current paper:** add multi-seed mean +/- std and
+   bootstrap CIs to both frozen tables, and add the invariance-ratio metric (the
+   harness already produces embeddings).
+3. **Provenance:** save the HGVS result JSONs and checkpoints as artifacts so the
+   flagship table is backed by stored files.
+4. **Add the xVal baseline** — cited as motivation but not benchmarked.
