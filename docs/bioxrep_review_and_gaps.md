@@ -56,11 +56,24 @@ beating SapBERT on a disjoint task. As written, the affirmative contribution is 
 benchmark + a negative result — a legitimate BioNLP paper, but not the method
 paper the brief describes.
 
-### 3. Track B (clinical lab-value / unit invariance) is scaffolding only
-The synthetic generator has lab/unit fields, but there are no real MIMIC-IV
-results, no unit-held-out numbers, and the numeric-consistency loss (`L_numeric`)
-isn't evaluated. The brief's "one method, two instantiations" shape has only one
-instantiation.
+### 3. Track B numeric-consistency loss — TESTED, negative (was: scaffolding only)
+**Update.** The numeric-consistency loss (`--numeric-loss-weight`) is now
+evaluated on a real HGVS cross-notation task (ClinVar, protein↔nucleotide
+expression) with a position-confounded hard benchmark. Holding input to text-only
+and varying only the loss weight (0.0 / 0.1 / 0.5, 5 seeds' worth of scaffolding
+reused), hard top-1 is `0.7275 → 0.705 → 0.7145` — all CIs overlap, so the
+auxiliary loss does **not** improve hard retrieval. Combined with the earlier
+numeric-*feature* ablation (sinusoidal/explicit position also hurts hard top-1),
+Track B's numeric objective is a closed negative result: shared position is a
+confound, not a discriminator. See `docs/bioxrep_hgvs_results.md`
+(§Numeric-consistency-loss ablation) and `scripts/run_trackb_numeric_loss.sh`.
+A pipeline fix landed alongside: the `_numeric_50k` source had 702 duplicate
+`fact_id`s that could leak across the split; dedup-by-`fact_id` restores a
+fact-disjoint split (leakage check passes).
+
+Still genuinely absent: real MIMIC-IV lab-value / unit-held-out results. The
+brief's "one method, two instantiations" shape now has the HGVS numeric
+instantiation tested (negative), not the lab-value one.
 
 ### 4. Interpretability and invariance metrics are only partly implemented
 The brief promises attribute probing, an invariance ratio (between-class /
@@ -69,11 +82,17 @@ attribute/numeric heads, and `bioxrep.eval.invariance_ratio` now computes the
 distance ratio for saved student checkpoints. No invariance-ratio result,
 probing table, or embedding visualization is frozen anywhere yet.
 
-### 5. No statistical rigor in the frozen tables
-Both docs mention `--bootstrap` CIs and multi-seed sweeps as *available*, but every
-headline number is a single-seed point estimate. ACL/BioNLP reviewers will ask for
-mean +/- std over seeds and CIs — especially since several conclusions rest on
-gaps like 0.051 vs 0.077.
+### 5. Statistical rigor — partly addressed (was: none in the frozen tables)
+Both docs mention `--bootstrap` CIs and multi-seed sweeps as *available*, and most
+headline numbers were single-seed point estimates. **Update.** The
+attention-distillation ablation is now reported as mean ± std over 5 seeds
+(`{13,17,23,42,101}`, `scripts/run_multiseed_ablation.sh`,
+`outputs/multiseed/aggregate_multiseed.json`): MRR `0.055±0.002` (contrastive) vs
+`0.056±0.002` / `0.056±0.001` (byte-rule / neural) — the ~0.001 gap is within one
+seed σ, strengthening the negative over the earlier single-seed bootstrap. The
+Track B numeric-loss arms carry bootstrap CIs. Still single-seed: the main
+HGNC results table (`0.051 vs 0.077` lexical floor) — that headline comparison
+should get the same multi-seed treatment before submission.
 
 ### 6. Reproducibility gap between docs and stored artifacts
 The HGNC comparison outputs and HGNC student checkpoint are saved as artifacts,

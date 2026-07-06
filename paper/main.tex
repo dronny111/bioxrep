@@ -134,7 +134,11 @@ continuous numeric tokenization \citep{xval}. Gene-symbol normalization is the
 non-numeric half of the cross-notation problem; the numeric half---HGVS positions,
 laboratory values, unit conversions---is where these value-aware encoders become the
 natural tools, and we treat them as the reference point for extending the benchmark
-beyond symbols.
+beyond symbols. On an HGVS cross-notation retrieval task with position-confounded
+hard negatives, we find that neither injecting position as a continuous input feature
+nor adding an auxiliary numeric-consistency loss improves hard top-1 over a text-only
+encoder---the shared position is a confound rather than a discriminator---so the
+numeric half inherits the same capacity-limited negative as the symbolic half.
 \paragraph{Clinical sequence models.} Representation learning over coded EHR
 sequences \citep{medbert, behrt, clmbr, gbert} shares the multi-notation setting
 but targets temporal streams of clinical codes rather than surface-form
@@ -278,8 +282,9 @@ Because the compression paradigm that motivates this work trains a student to
 match a stronger model's \emph{internal} behavior---attention in particular
 \citep{zagoruyko2017attention}---we test whether adding an attention-distillation
 objective rescues the student. We compare three arms with identical student
-configuration (char-CNN, hidden $64$, projection $128$, $3$ epochs, seed $13$,
-same fact-disjoint split), varying only the auxiliary loss that supervises the
+configuration (char-CNN, hidden $64$, projection $128$, $3$ epochs,
+same fact-disjoint split), each trained across $5$ random seeds
+($\{13,17,23,42,101\}$), varying only the auxiliary loss that supervises the
 student's cross-form character attention $\mathrm{softmax}(f_s f_t^{\top}/\sqrt{d})$:
 (i) contrastive only; (ii) a \emph{deterministic} byte/digit teacher that places
 mass on exact-character and digit--digit alignments; and (iii) a \emph{neural}
@@ -296,29 +301,32 @@ KL target. The distillation loss is active in both (ii) and (iii)
 \toprule
 \textbf{Student objective} & \textbf{MRR} & \textbf{top-1} & \textbf{inv.\ ratio} \\
 \midrule
-Contrastive only                 & 0.050 & 0.033 & 0.753 \\
-\;\; + byte-rule attn.\ distill   & 0.054 & 0.035 & 0.769 \\
-\;\; + neural-teacher attn.\ distill & 0.050 & 0.037 & 0.804 \\
+Contrastive only                 & $0.055 \pm 0.002$ & $0.036 \pm 0.003$ & $0.789 \pm 0.010$ \\
+\;\; + byte-rule attn.\ distill   & $0.056 \pm 0.002$ & $0.037 \pm 0.004$ & $0.750 \pm 0.042$ \\
+\;\; + neural-teacher attn.\ distill & $0.056 \pm 0.001$ & $0.038 \pm 0.002$ & $0.761 \pm 0.026$ \\
 \bottomrule
 \end{tabular}
 \caption{Attention-distillation ablation on held-out \texttt{alias\_symbol}
-(same $2{,}000$ queries / $45$k pool as Table~\ref{tab:results}). MRR $95\%$
-bootstrap intervals overlap across all three arms
-($[0.042,0.058]$, $[0.045,0.062]$, $[0.042,0.059]$). The invariance ratio is the
+(same $2{,}000$ queries / $45$k pool as Table~\ref{tab:results}), reported as
+mean $\pm$ standard deviation across $5$ random seeds. The MRR difference between
+the contrastive baseline and either distillation arm ($\sim\!0.001$) is well
+within one standard deviation of seed variance. The invariance ratio is the
 mean within-class over between-class embedding cosine distance (lower is more
-notation-invariant). Neither teacher improves held-out retrieval, and both
-\emph{increase} the invariance ratio.}
+notation-invariant); the three arms are indistinguishable once seed variance is
+accounted for. Neither teacher improves held-out retrieval.}
 \label{tab:ablation}
 \end{table}
 
 Neither form of attention distillation closes the gap (Table~\ref{tab:ablation}).
-The deterministic teacher leaves held-out MRR statistically unchanged
-($0.050 \rightarrow 0.054$, overlapping bootstrap intervals); the neural teacher,
-despite carrying a demonstrably stronger alignment signal, is indistinguishable
-from the contrastive-only baseline ($0.050$) and yields the \emph{worst} invariance
-ratio of the three ($0.804$). Distilling a better \emph{surface-form} attention map
-does not induce notation invariance here---consistent with the reading that the
-limit is representational capacity, not the supervisory target's quality. This is a
+Across five seeds the deterministic and neural teachers both raise mean held-out
+MRR by only $\sim\!0.001$ over the contrastive-only baseline ($0.055$)---a shift
+smaller than the per-arm seed standard deviation, and therefore not distinguishable
+from noise. The neural teacher carries a demonstrably stronger alignment signal
+(validation top-1 $0.677$ versus the student's $0.582$) yet confers no measurable
+retrieval benefit, and the three arms' invariance ratios overlap once seed variance
+is included. Distilling a better \emph{surface-form} attention map does not induce
+notation invariance here---consistent with the reading that the limit is
+representational capacity, not the supervisory target's quality. This is a
 test of attention-map matching between two surface-only encoders; it does not test
 distillation from a \emph{semantically pretrained} teacher (e.g.\ SapBERT-strength
 embeddings), which remains the open path (\S\ref{sec:conclusion}).
