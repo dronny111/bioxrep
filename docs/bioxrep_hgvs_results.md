@@ -55,17 +55,51 @@ Training/evaluation artifacts:
 
 All learned models use the same lightweight character CNN encoder and are evaluated on the same full 2k strict-filled hard benchmark.
 
-| Model | Old pair top-1 | Hard top-1 | Hard top-5 | Hard MRR |
-| --- | ---: | ---: | ---: | ---: |
-| Char n-gram retrieval | n/a | `0.1540` | `0.3995` | `0.296` |
-| Text-only CNN | `0.9574` | `0.6995` | `0.9465` | `0.812` |
-| Text+numeric CNN, sinusoidal `protein_position + cdna_position` | `1.0000` | `0.4875` | `0.9985` | `0.701` |
-| Numeric-only CNN, sinusoidal `protein_position + cdna_position` | `1.0000` | `0.3480` | `0.9840` | `0.610` |
-| Masked-digit text+numeric CNN | `1.0000` | `0.5385` | `0.9995` | `0.731` |
+The numeric **input-feature** ablation compares how the position is injected, holding
+everything else fixed (`seed 13`, 3 epochs, char-CNN hidden 64 / proj 128, corrected
+deduped fact-disjoint split, no auxiliary numeric loss). `none` is the text-only byte
+encoder — because each digit is already its own byte token, this row doubles as the
+**digit-tokenization** baseline. `explicit` = normalized scalar + present-mask;
+`sinusoidal` = multi-frequency Fourier features; `xval` = xVal-style continuous
+tokenization (Golkar et al. 2023), a learned per-field embedding scaled by the value.
+
+**Full 20-candidate pool** (bootstrap 1000; each pool has ~2.25 position-matched
+decoys and ~16.75 random-fill decoys):
+
+| `--numeric-feature-mode` | Hard top-1 | 95% CI | Hard top-5 | Hard MRR |
+| --- | ---: | :---: | ---: | ---: |
+| `none` (text-only / digit-token) | `0.6800` | `[0.659, 0.700]` | `0.9685` | `0.804` |
+| `explicit` (scalar) | `0.8345` | `[0.819, 0.850]` | `0.9920` | `0.904` |
+| `sinusoidal` (Fourier) | `0.4980` | `[0.477, 0.519]` | `0.9940` | `0.708` |
+| `xval` (continuous tok.) | `0.8455` | `[0.829, 0.862]` | `0.9930` | `0.911` |
+
+**Strict matched-only pool** (random-fill decoys dropped; positive ranked against
+only its ~2.25 position-matched hard decoys, avg pool 3.25):
+
+| `--numeric-feature-mode` | Hard top-1 | 95% CI | Hard top-5 | Hard MRR |
+| --- | ---: | :---: | ---: | ---: |
+| `none` (text-only / digit-token) | **`0.9195`** | `[0.908, 0.930]` | `0.9995` | `0.957` |
+| `explicit` (scalar) | `0.9000` | `[0.887, 0.913]` | `0.9995` | `0.947` |
+| `sinusoidal` (Fourier) | `0.4980` | `[0.477, 0.518]` | `0.9940` | `0.708` |
+| `xval` (continuous tok.) | `0.9060` | `[0.892, 0.919]` | `0.9995` | `0.951` |
 
 ## Interpretation
 
-The benchmark is not solved by numeric shortcuts. Numeric features make old pair retrieval look perfect and push hard top-5 very high — but part of that top-5 lift comes from the random-fill decoys, which any position feature rejects trivially, so top-5 overstates hard-negative discrimination. The decisive column is hard top-1, evaluated against the position-matched decoys, and there the numeric features *reduce* accuracy: the numeric component is identical for the positive and its confounded negatives, so it only dilutes the text signal. The text-only model is the strongest top-1 model, and masked-digit text still beats numeric-only, showing that non-digit sequence context carries notation-invariant signal.
+**The full-pool ranking is an artifact of easy-decoy rejection, and it inverts under
+the strict pool.** On the full 20-candidate pool the numeric features (`explicit`,
+`xval`) look like large wins (~0.83–0.85 vs text-only 0.68), but each pool contains
+only ~2.25 genuinely position-matched decoys against ~16.75 random-fill decoys, and
+any position feature rejects the random decoys trivially. When the random-fill decoys
+are removed and the positive is scored against **only** its position-matched hard
+decoys, the ranking flips: **text-only is the strongest (0.9195), and every numeric
+input feature is neutral-to-harmful** — `xval` `0.906` and `explicit` `0.900` sit
+below text-only with non-overlapping-to-touching CIs, and `sinusoidal` collapses to
+`0.498`. This is exactly expected: on a position-matched pool the numeric component is
+near-identical for the positive and its hard decoys, so it carries no discriminative
+signal and only dilutes the text channel; the sinusoidal encoding makes matched decoys
+almost indistinguishable, which is why it collapses. The decisive column is therefore
+hard top-1 **on the matched-only pool**, and there the negative holds across all three
+value-aware schemes, including xVal.
 
 Two caveats for paper framing. (1) All rows above are trained at the same 50k-pair scale, so this table isolates the numeric-feature ablation; any claim about training-scale ("more facts") must cite the separate small-vs-large runs, not this table. (2) Within a shared-position pool, distinguishing the positive nucleotide form from its position-matched decoys largely reduces to mapping the amino-acid substitution to the correct codon change — i.e. the model is rewarded for learning genetic-code structure, which is a specific and worthwhile capability but narrower than "notation invariance" in general. Report text-only representation learning separately from numeric-feature upper-bound or teacher-feature models, and report the realized decoy composition alongside the metrics.
 

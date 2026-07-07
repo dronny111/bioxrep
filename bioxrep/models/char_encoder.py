@@ -41,6 +41,11 @@ class CharCNNEncoder(nn.Module):
         self.convs = nn.ModuleList(
             [nn.Conv1d(hidden_dim, hidden_dim, kernel_size=kernel_size, padding=kernel_size // 2) for kernel_size in kernel_sizes]
         )
+        # Channel width of each conv branch. Cached so masked max-pooling can slice the
+        # concatenated feature map at the correct per-branch boundaries instead of
+        # assuming every branch shares convs[0].out_channels (a silent bug if the
+        # branches are ever given different widths).
+        self.branch_channels = [conv.out_channels for conv in self.convs]
         self.dropout = nn.Dropout(dropout)
         self.projection = nn.Sequential(
             nn.Linear(hidden_dim * len(kernel_sizes), hidden_dim),
@@ -53,10 +58,12 @@ class CharCNNEncoder(nn.Module):
         features_by_position = self.token_features(token_ids, mask).transpose(1, 2)
         pooled_outputs = []
         expanded_mask = mask.unsqueeze(1)
-        for start in range(0, features_by_position.shape[1], self.convs[0].out_channels):
-            features = features_by_position[:, start : start + self.convs[0].out_channels, :]
+        start = 0
+        for width in self.branch_channels:
+            features = features_by_position[:, start : start + width, :]
             masked_features = features.masked_fill(expanded_mask == 0, -1e4)
             pooled_outputs.append(masked_features.max(dim=2).values)
+            start += width
         pooled = torch.cat(pooled_outputs, dim=1)
         projected = self.projection(self.dropout(pooled))
         return F.normalize(projected, dim=-1)

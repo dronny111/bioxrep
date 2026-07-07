@@ -108,9 +108,22 @@ HGVS flagship.
 
 ### 7. Baseline coverage is narrower than the brief
 Implemented: char n-gram, char-CNN, SapBERT dense, BioSyn hybrid, canonical
-teacher. Missing from the brief's list: a subword-transformer encoder, a
-digit-token numeric encoder, and an **xVal-style continuous numeric baseline** —
-notable because xVal is a headline citation motivating the whole numeric angle.
+teacher. **RESOLVED (numeric side):** the numeric input-feature ablation now runs
+four arms on the corrected deduped split — `none` (text-only byte encoder, which
+doubles as the **digit-token** baseline since each digit is its own byte),
+`explicit` scalar, `sinusoidal` Fourier, and an **xVal-style continuous numeric
+baseline** (Golkar et al. 2023) — closing the "xVal cited but not benchmarked"
+gap. Finding: on the full 20-candidate pool the value-aware features look like wins
+(`explicit` 0.834, `xval` 0.846 vs text-only 0.680 hard top-1), but each pool has
+only ~2.25 position-matched decoys against ~16.75 random-fill decoys, so that gain
+is trivial random-decoy rejection. On the **strict matched-only pool** (positive
+scored against only its position-matched hard decoys) the ranking inverts:
+text-only **0.9195** [0.908, 0.930] > `xval` 0.906 > `explicit` 0.900, and
+`sinusoidal` collapses to 0.498. The honest negative — value-aware numeric features
+do not help discriminate position-confounded hard negatives — holds across xVal.
+Full numbers in `docs/bioxrep_hgvs_results.md`; eval JSONs
+`outputs/trackb_featmode/eval/hard_feat_*.json` and `strict_matched_only.json`.
+Still missing from the brief: a subword-transformer encoder baseline.
 
 ### 8. Tests / CI are minimal
 A lightweight `pytest` suite and GitHub Actions workflow now cover retrieval
@@ -187,4 +200,6 @@ between sessions.
    harness already produces embeddings).
 3. **Provenance:** save the HGVS result JSONs and checkpoints as artifacts so the
    flagship table is backed by stored files.
-4. **Add the xVal baseline** — cited as motivation but not benchmarked.
+4. ~~**Add the xVal baseline** — cited as motivation but not benchmarked.~~
+   **DONE** — benchmarked in the 4-arm feature-mode ablation (see section 7);
+   negative holds on the strict matched-only pool.

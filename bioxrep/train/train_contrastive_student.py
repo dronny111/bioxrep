@@ -147,6 +147,16 @@ class NumericFeatureEncoder(nn.Module):
                 nn.GELU(),
                 nn.Linear(projection_dim, projection_dim),
             )
+        elif mode == "xval":
+            # xVal-style continuous tokenization (Golkar et al., 2023): a single learned
+            # embedding per field is scaled multiplicatively by the (normalized) value,
+            # so magnitude is carried in the activation rather than in discrete tokens.
+            self.value_embeddings = nn.Parameter(torch.randn(input_dim, projection_dim) * 0.02)
+            self.project = nn.Sequential(
+                nn.Linear(projection_dim, projection_dim),
+                nn.GELU(),
+                nn.Linear(projection_dim, projection_dim),
+            )
         else:
             raise ValueError(f"Unknown numeric feature mode: {mode}")
 
@@ -154,6 +164,13 @@ class NumericFeatureEncoder(nn.Module):
         if self.mode == "explicit":
             features = torch.cat([normalized_values, present_mask], dim=1)
             return self.project(features)
+
+        if self.mode == "xval":
+            # Scale each field's learned embedding by its normalized value, zero out
+            # absent fields, and sum across fields before projecting.
+            scaled = (normalized_values * present_mask).unsqueeze(-1) * self.value_embeddings.unsqueeze(0)
+            pooled = scaled.sum(dim=1)
+            return self.project(pooled)
 
         frequencies = torch.pow(
             2.0,
@@ -1396,7 +1413,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attribute-fields", default="")
     parser.add_argument("--attribute-loss-weight", type=float, default=0.0)
     parser.add_argument("--numeric-fields", default="")
-    parser.add_argument("--numeric-feature-mode", choices=["none", "explicit", "sinusoidal"], default="none")
+    parser.add_argument("--numeric-feature-mode", choices=["none", "explicit", "sinusoidal", "xval"], default="none")
     parser.add_argument("--numeric-fourier-dim", type=int, default=16)
     parser.add_argument("--numeric-loss-weight", type=float, default=0.0)
     parser.add_argument(

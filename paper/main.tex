@@ -137,10 +137,15 @@ non-numeric half of the cross-notation problem; the numeric half---HGVS position
 laboratory values, unit conversions---is where these value-aware encoders become the
 natural tools, and we treat them as the reference point for extending the benchmark
 beyond symbols. On an HGVS cross-notation retrieval task with position-confounded
-hard negatives, we find that neither injecting position as a continuous input feature
-nor adding an auxiliary numeric-consistency loss improves hard top-1 over a text-only
-encoder---the shared position is a confound rather than a discriminator---so the
-numeric half inherits the same capacity-limited negative as the symbolic half.
+hard negatives, we find that none of these value-aware input encodings---an explicit
+normalized scalar, sinusoidal features, or xVal-style continuous tokenization
+\citep{xval}---improves hard top-1 over a text-only encoder, and neither does an
+auxiliary numeric-consistency loss. On the full candidate pool the numeric features
+appear to help, but that gain is an artifact of trivially rejecting random-fill
+decoys; when the positive is scored against only its position-matched hard negatives
+the ranking inverts and text-only is strongest, because the shared position is a
+confound rather than a discriminator. The numeric half thus inherits the same
+capacity-limited negative as the symbolic half.
 \paragraph{Clinical sequence models.} Representation learning over coded EHR
 sequences \citep{medbert, behrt, clmbr, gbert} shares the multi-notation setting
 but targets temporal streams of clinical codes rather than surface-form
@@ -356,13 +361,28 @@ target notation with notation-balanced sampling. We release the benchmark, the f
 and the student adapter to support that work.
 
 \section*{Limitations}
-The study covers a single entity type (genes, via HGNC) and a single lightweight
-student architecture; whether the negative result extends to larger surface-only
-encoders or to other entity types (variants, chemicals, phenotypes) is not
-established here. Queries are capped at $2{,}000$ per notation for tractable CPU
+The headline benchmark covers a single entity type (genes, via HGNC) with a
+lightweight student; the numeric probe adds one further type (variants, via HGVS
+cross-notation retrieval) but is likewise confined to a small char-CNN. Whether the
+negative result extends to larger surface-only encoders or to other entity types
+(chemicals, phenotypes) is not established here. In particular, the clinical
+lab-value instantiation of the numeric half---held-out unit conversions and
+reference-range normalization over real EHR values, which would require gated
+PhysioNet/MIMIC-IV access---is left to future work; we make no lab-value claim.
+Queries are capped at $2{,}000$ per notation for tractable CPU
 evaluation, which bounds the precision of the reported metrics. The canonical
 teacher is a structured oracle and is reported only to bracket the achievable
 range, not as a learnable target.
+
+Finally, the held-out \texttt{alias\_symbol} task is not perfectly well-posed from
+surface form alone: some alias symbols are genuinely ambiguous or share no
+substring with their approved symbol, so no notation-invariant encoder---however
+large---can rank every query correctly from the string alone. The reference
+methods bound how much of the task \emph{is} resolvable with lexical or dense
+biomedical signal ($0.077$ and $0.134$ MRR respectively), and the low absolute
+ceiling reflects this partial identifiability rather than any single model's
+failure; our claim is only the relative one, that the char-CNN student does not
+reach even that resolvable portion.
 
 \section*{Ethics Statement}
 All experiments use public reference terminologies (HGNC gene nomenclature) and
