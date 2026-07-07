@@ -51,7 +51,7 @@ MRR / top-1 / top-5 over `2,000` queries against the `44,997`-symbol pool.
 | `alias_symbol` heldout | Char n-gram | `0.047` | `0.108` | `0.077` |
 | `alias_symbol` heldout | SapBERT dense | `0.080` | `0.190` | `0.134` |
 | `alias_symbol` heldout | BioSyn hybrid (λ=0.7) | `0.077` | `0.182` | `0.129` |
-| `alias_symbol` heldout | **BioXRep char-CNN student** | `0.035` | `0.064` | `0.051` |
+| `alias_symbol` heldout | **BioXRep char-CNN student** (5-seed mean) | `0.041` | `0.075` | `0.059 ± 0.001` |
 | `alias_symbol` heldout | Canonical teacher | `1.000` | `1.000` | `1.000` |
 | `prev_symbol` | Char n-gram | `0.146` | `0.276` | `0.205` |
 | `prev_symbol` | SapBERT dense | `0.140` | `0.297` | `0.219` |
@@ -106,9 +106,9 @@ The canonical teacher is a structured oracle: it matches on the HGNC `symbol` at
 
 ### BioXRep char-CNN student: a negative result on the protagonist task
 
-The trained student does **not** beat SapBERT dense on the fact-disjoint `alias_symbol` task — the task it was added to contest. It scores `0.051` MRR, below both SapBERT dense (`0.134`) and the char n-gram lexical floor (`0.077`). This is a clean negative result and is reported as such.
+The trained student does **not** beat SapBERT dense on the fact-disjoint `alias_symbol` task — the task it was added to contest. It scores `0.059 ± 0.001` MRR (mean ± std over 5 seeds {13,17,23,42,101}), below both SapBERT dense (`0.134`) and the char n-gram lexical floor (`0.077`) — a gap of >15 seed standard deviations. This is a clean negative result, robust to seed, and is reported as such.
 
-Two factors explain it. First, `alias_symbol` is a held-out **notation**, not just held-out facts: the student never sees a single `alias_symbol` form in training, so it must transfer from other short-symbol notations (`approved_symbol`, `prev_symbol`) whose surface statistics only partly overlap. Second, a ~100k-parameter byte-level char-CNN encodes little beyond character composition; on short alias symbols that share few characters with the approved symbol, it has neither the lexical precision of TF-IDF n-grams nor the biomedical semantics SapBERT acquired from UMLS self-alignment. The in-domain validation top-1 of `0.985` on symbol↔name pairs confirms the model trained correctly — but note this is an **in-batch** retrieval number (each left form ranked against the ~128 right forms in its batch), not retrieval against the 45k-symbol pool, so it is not directly comparable to the `0.051` pool MRR. It simply confirms the model learned a same-class similarity that does not transfer to unseen short-symbol notations against a 45k-way pool.
+Two factors explain it. First, `alias_symbol` is a held-out **notation**, not just held-out facts: the student never sees a single `alias_symbol` form in training, so it must transfer from other short-symbol notations (`approved_symbol`, `prev_symbol`) whose surface statistics only partly overlap. Second, a ~100k-parameter byte-level char-CNN encodes little beyond character composition; on short alias symbols that share few characters with the approved symbol, it has neither the lexical precision of TF-IDF n-grams nor the biomedical semantics SapBERT acquired from UMLS self-alignment. The in-domain validation top-1 of `0.985` on symbol↔name pairs confirms the model trained correctly — but note this is an **in-batch** retrieval number (each left form ranked against the ~128 right forms in its batch), not retrieval against the 45k-symbol pool, so it is not directly comparable to the `0.059` pool MRR. It simply confirms the model learned a same-class similarity that does not transfer to unseen short-symbol notations against a 45k-way pool.
 
 The two `train-seen` rows are consistent with this reading: even where the query notation was in the training distribution (`prev_symbol` MRR `0.158`, `alias_name` MRR `0.042`), the small char encoder still trails the off-the-shelf baselines. It carries some lexical signal on `prev_symbol` (which overlaps approved symbols) but collapses to the lexical floor on the free-text `alias_name`, where it has no semantic capacity.
 

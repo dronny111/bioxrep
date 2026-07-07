@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import re
 from collections import Counter
@@ -146,6 +147,16 @@ class NumericFeatureEncoder(nn.Module):
                 nn.GELU(),
                 nn.Linear(projection_dim, projection_dim),
             )
+        elif mode == "xval":
+            # xVal-style continuous tokenization (Golkar et al., 2023): a single learned
+            # embedding per field is scaled multiplicatively by the (normalized) value,
+            # so magnitude is carried in the activation rather than in discrete tokens.
+            self.value_embeddings = nn.Parameter(torch.randn(input_dim, projection_dim) * 0.02)
+            self.project = nn.Sequential(
+                nn.Linear(projection_dim, projection_dim),
+                nn.GELU(),
+                nn.Linear(projection_dim, projection_dim),
+            )
         else:
             raise ValueError(f"Unknown numeric feature mode: {mode}")
 
@@ -153,6 +164,13 @@ class NumericFeatureEncoder(nn.Module):
         if self.mode == "explicit":
             features = torch.cat([normalized_values, present_mask], dim=1)
             return self.project(features)
+
+        if self.mode == "xval":
+            # Scale each field's learned embedding by its normalized value, zero out
+            # absent fields, and sum across fields before projecting.
+            scaled = (normalized_values * present_mask).unsqueeze(-1) * self.value_embeddings.unsqueeze(0)
+            pooled = scaled.sum(dim=1)
+            return self.project(pooled)
 
         frequencies = torch.pow(
             2.0,
@@ -202,6 +220,11 @@ class ContrastiveStudent(nn.Module):
 
     def attribute_logits(self, embeddings: torch.Tensor) -> Dict[str, torch.Tensor]:
         return {field: head(embeddings) for field, head in self.attribute_heads.items()}
+
+    def token_features(self, token_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        if not hasattr(self.encoder, "token_features"):
+            raise ValueError("The selected encoder does not expose token-level features for attention distillation")
+        return self.encoder.token_features(token_ids, mask)
 
 
 class PairDataset(Dataset):
@@ -460,6 +483,216 @@ def supervised_contrastive_loss(embeddings: torch.Tensor, temperature: float, po
     return row_losses[valid_rows].mean()
 
 
+def byte_alignment_teacher_probs(
+    source_ids: torch.Tensor,
+    target_ids: torch.Tensor,
+    source_mask: torch.Tensor,
+    target_mask: torch.Tensor,
+    exact_weight: float = 2.0,
+    digit_weight: float = 1.0,
+) -> torch.Tensor:
+    """Build a deterministic teacher distribution over target character positions.
+
+    The teacher assigns mass to exact byte matches and a smaller mass to any
+    digit-to-digit match. Rows with no match fall back to a uniform distribution
+    over valid target positions, so every source character has a defined target
+    attention distribution.
+    """
+    exact = (source_ids.unsqueeze(2) == target_ids.unsqueeze(1)).float()
+    source_digits = ((source_ids >= ord("0") + 1) & (source_ids <= ord("9") + 1)).unsqueeze(2)
+    target_digits = ((target_ids >= ord("0") + 1) & (target_ids <= ord("9") + 1)).unsqueeze(1)
+    digit_matches = (source_digits & target_digits).float()
+
+    target_valid = target_mask.unsqueeze(1)
+    weights = (exact_weight * exact + digit_weight * digit_matches) * target_valid
+    row_sums = weights.sum(dim=2, keepdim=True)
+    target_counts = target_valid.sum(dim=2, keepdim=True).clamp_min(1.0)
+    uniform = target_valid / target_counts
+    teacher = torch.where(row_sums > 0, weights / row_sums.clamp_min(1e-8), uniform)
+    return teacher * source_mask.unsqueeze(2)
+
+
+def neural_teacher_attention_probs(
+    teacher: "ContrastiveStudent",
+    source_ids: torch.Tensor,
+    target_ids: torch.Tensor,
+    source_mask: torch.Tensor,
+    target_mask: torch.Tensor,
+    temperature: float = 1.0,
+) -> torch.Tensor:
+    """Build a *learned* teacher distribution over target character positions.
+
+    A frozen, pretrained student encoder replaces the deterministic byte/digit
+    rule: the teacher's own token-level cross-form attention
+    ``softmax(f_src . f_tgt^T / (sqrt(d) * tau))`` becomes the KL target the
+    (smaller/cheaper) student is trained to match. Same tensor shape and byte
+    grid as ``byte_alignment_teacher_probs`` so it is a drop-in target for
+    ``attention_kl_loss``. This is the neural-teacher form of the namesake
+    attention-distillation method (vs. the hand-coded byte/digit teacher).
+    """
+    with torch.no_grad():
+        source_features = teacher.token_features(source_ids, source_mask)
+        target_features = teacher.token_features(target_ids, target_mask)
+        feature_dim = max(1, source_features.shape[-1])
+        scale = math.sqrt(feature_dim) * max(temperature, 1e-6)
+        logits = source_features @ target_features.transpose(1, 2) / scale
+        logits = logits.masked_fill(target_mask.unsqueeze(1) == 0, -1e4)
+        probs = F.softmax(logits, dim=2)
+        return probs * source_mask.unsqueeze(2)
+
+
+def load_teacher_model(checkpoint_path: "os.PathLike[str] | str", device: torch.device) -> "ContrastiveStudent":
+    """Reconstruct a frozen teacher ``ContrastiveStudent`` from a saved checkpoint."""
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    saved_args = dict(checkpoint["args"])
+    namespace = argparse.Namespace(**saved_args)
+    attribute_vocabularies = checkpoint.get("attribute_vocabularies", {})
+    numeric_field_stats = checkpoint.get("numeric_field_stats", {})
+    numeric_fields = sorted(numeric_field_stats)
+    numeric_feature_encoder = None
+    if numeric_field_stats and getattr(namespace, "numeric_feature_mode", "none") != "none":
+        numeric_feature_encoder = NumericFeatureEncoder(
+            input_dim=len(numeric_field_stats),
+            projection_dim=namespace.projection_dim,
+            mode=namespace.numeric_feature_mode,
+            fourier_dim=getattr(namespace, "numeric_fourier_dim", 16),
+        )
+    model = ContrastiveStudent(
+        build_encoder(namespace),
+        namespace.projection_dim,
+        attribute_vocabularies,
+        numeric_target_fields=numeric_fields,
+        numeric_feature_encoder=numeric_feature_encoder,
+        text_weight=getattr(namespace, "text_weight", 1.0),
+    ).to(device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+    return model
+
+
+def attention_kl_loss(
+    source_features: torch.Tensor,
+    target_features: torch.Tensor,
+    source_ids: torch.Tensor,
+    target_ids: torch.Tensor,
+    source_mask: torch.Tensor,
+    target_mask: torch.Tensor,
+    exact_weight: float,
+    digit_weight: float,
+    teacher_probs: torch.Tensor | None = None,
+) -> torch.Tensor:
+    if teacher_probs is None:
+        teacher = byte_alignment_teacher_probs(
+            source_ids=source_ids,
+            target_ids=target_ids,
+            source_mask=source_mask,
+            target_mask=target_mask,
+            exact_weight=exact_weight,
+            digit_weight=digit_weight,
+        )
+    else:
+        teacher = teacher_probs
+    feature_dim = max(1, source_features.shape[-1])
+    logits = source_features @ target_features.transpose(1, 2) / math.sqrt(feature_dim)
+    logits = logits.masked_fill(target_mask.unsqueeze(1) == 0, -1e4)
+    log_probs = F.log_softmax(logits, dim=2)
+    row_losses = F.kl_div(log_probs, teacher, reduction="none").sum(dim=2)
+    valid_rows = source_mask > 0
+    if int(valid_rows.sum().item()) == 0:
+        return torch.tensor(0.0, device=source_features.device)
+    return row_losses[valid_rows].mean()
+
+
+def pair_attention_distillation_loss(
+    model: ContrastiveStudent,
+    left_ids: torch.Tensor,
+    left_mask: torch.Tensor,
+    right_ids: torch.Tensor,
+    right_mask: torch.Tensor,
+    exact_weight: float,
+    digit_weight: float,
+    teacher_model: "ContrastiveStudent | None" = None,
+    teacher_temperature: float = 1.0,
+) -> torch.Tensor:
+    left_features = model.token_features(left_ids, left_mask)
+    right_features = model.token_features(right_ids, right_mask)
+    lr_teacher = rl_teacher = None
+    if teacher_model is not None:
+        lr_teacher = neural_teacher_attention_probs(
+            teacher_model, left_ids, right_ids, left_mask, right_mask, teacher_temperature
+        )
+        rl_teacher = neural_teacher_attention_probs(
+            teacher_model, right_ids, left_ids, right_mask, left_mask, teacher_temperature
+        )
+    left_to_right = attention_kl_loss(
+        left_features,
+        right_features,
+        left_ids,
+        right_ids,
+        left_mask,
+        right_mask,
+        exact_weight,
+        digit_weight,
+        teacher_probs=lr_teacher,
+    )
+    right_to_left = attention_kl_loss(
+        right_features,
+        left_features,
+        right_ids,
+        left_ids,
+        right_mask,
+        left_mask,
+        exact_weight,
+        digit_weight,
+        teacher_probs=rl_teacher,
+    )
+    return (left_to_right + right_to_left) / 2.0
+
+
+def class_attention_distillation_loss(
+    model: ContrastiveStudent,
+    token_ids: torch.Tensor,
+    mask: torch.Tensor,
+    fact_ids: Sequence[str],
+    exact_weight: float,
+    digit_weight: float,
+    teacher_model: "ContrastiveStudent | None" = None,
+    teacher_temperature: float = 1.0,
+) -> torch.Tensor:
+    grouped_indices: Dict[str, List[int]] = {}
+    for index, fact_id in enumerate(fact_ids):
+        grouped_indices.setdefault(fact_id, []).append(index)
+
+    left_indices: List[int] = []
+    right_indices: List[int] = []
+    for indices in grouped_indices.values():
+        if len(indices) < 2:
+            continue
+        anchor = indices[0]
+        for other in indices[1:]:
+            left_indices.append(anchor)
+            right_indices.append(other)
+
+    if not left_indices:
+        return torch.tensor(0.0, device=token_ids.device)
+
+    left = torch.tensor(left_indices, dtype=torch.long, device=token_ids.device)
+    right = torch.tensor(right_indices, dtype=torch.long, device=token_ids.device)
+    return pair_attention_distillation_loss(
+        model=model,
+        left_ids=token_ids.index_select(0, left),
+        left_mask=mask.index_select(0, left),
+        right_ids=token_ids.index_select(0, right),
+        right_mask=mask.index_select(0, right),
+        exact_weight=exact_weight,
+        digit_weight=digit_weight,
+        teacher_model=teacher_model,
+        teacher_temperature=teacher_temperature,
+    )
+
+
 def attribute_loss(
     model: ContrastiveStudent,
     left_embeddings: torch.Tensor,
@@ -571,12 +804,18 @@ def evaluate(
     temperature: float,
     attribute_loss_weight: float,
     numeric_loss_weight: float,
+    attention_distillation_weight: float,
+    attention_teacher_exact_weight: float,
+    attention_teacher_digit_weight: float,
+    teacher_model: "ContrastiveStudent | None" = None,
+    teacher_temperature: float = 1.0,
 ) -> Dict[str, float]:
     model.eval()
     total = 0
     top1 = 0
     top5 = 0
     losses: List[float] = []
+    attention_losses: List[float] = []
     attribute_metric_history: Dict[str, List[float]] = {}
     numeric_metric_history: Dict[str, List[float]] = {}
 
@@ -608,8 +847,30 @@ def evaluate(
             batch["numeric_field_names"],
             device,
         )
+        if attention_distillation_weight > 0:
+            batch_attention_loss = pair_attention_distillation_loss(
+                model=model,
+                left_ids=left_ids,
+                left_mask=left_mask,
+                right_ids=right_ids,
+                right_mask=right_mask,
+                exact_weight=attention_teacher_exact_weight,
+                digit_weight=attention_teacher_digit_weight,
+                teacher_model=teacher_model,
+                teacher_temperature=teacher_temperature,
+            )
+            attention_losses.append(float(batch_attention_loss.cpu()))
+        else:
+            batch_attention_loss = torch.tensor(0.0, device=device)
         losses.append(
-            float((batch_contrastive_loss + attribute_loss_weight * batch_attribute_loss + numeric_loss_weight * batch_numeric_loss).cpu())
+            float(
+                (
+                    batch_contrastive_loss
+                    + attribute_loss_weight * batch_attribute_loss
+                    + numeric_loss_weight * batch_numeric_loss
+                    + attention_distillation_weight * batch_attention_loss
+                ).cpu()
+            )
         )
         for key, value in batch_attribute_metrics.items():
             attribute_metric_history.setdefault(key, []).append(value)
@@ -624,6 +885,7 @@ def evaluate(
 
     metrics = {
         "loss": sum(losses) / max(1, len(losses)),
+        "attention_distillation_loss": sum(attention_losses) / max(1, len(attention_losses)),
         "top1": top1 / max(1, total),
         "top5": top5 / max(1, total),
         "pairs": total,
@@ -818,6 +1080,8 @@ def train(args: argparse.Namespace) -> Dict[str, object]:
         hard_valid_records = read_jsonl(args.hard_valid_input)
         if args.max_hard_valid_queries is not None:
             hard_valid_records = hard_valid_records[: args.max_hard_valid_queries]
+    if args.hard_train_input is not None and args.attention_distillation_weight > 0:
+        raise ValueError("--attention-distillation-weight is supported for pair and class training, not --hard-train-input")
 
     class_train_examples: List[Dict[str, object]] = []
     hard_train_records: List[Dict[str, object]] = []
@@ -926,10 +1190,17 @@ def train(args: argparse.Namespace) -> Dict[str, object]:
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
+    teacher_model = None
+    if getattr(args, "attention_teacher_checkpoint", None) is not None:
+        if args.attention_distillation_weight <= 0:
+            raise ValueError("--attention-teacher-checkpoint requires --attention-distillation-weight > 0")
+        teacher_model = load_teacher_model(args.attention_teacher_checkpoint, device)
+
     history: List[Dict[str, float]] = []
     for epoch in range(1, args.epochs + 1):
         model.train()
         losses: List[float] = []
+        attention_losses: List[float] = []
         attribute_metric_history: Dict[str, List[float]] = {}
         numeric_metric_history: Dict[str, List[float]] = {}
         for batch in train_loader:
@@ -945,6 +1216,7 @@ def train(args: argparse.Namespace) -> Dict[str, object]:
                 )
                 batch_attribute_metrics = {}
                 batch_numeric_metrics = {}
+                batch_attention_loss = torch.tensor(0.0, device=device)
                 for key, value in hard_train_metrics.items():
                     attribute_metric_history.setdefault(key, []).append(value)
             else:
@@ -963,6 +1235,19 @@ def train(args: argparse.Namespace) -> Dict[str, object]:
                         device,
                     )
                     batch_numeric_loss, batch_numeric_metrics = torch.tensor(0.0, device=device), {}
+                    if args.attention_distillation_weight > 0:
+                        batch_attention_loss = class_attention_distillation_loss(
+                            model=model,
+                            token_ids=ids,
+                            mask=mask,
+                            fact_ids=batch["fact_id"],
+                            exact_weight=args.attention_teacher_exact_weight,
+                            digit_weight=args.attention_teacher_digit_weight,
+                            teacher_model=teacher_model,
+                            teacher_temperature=args.attention_teacher_temperature,
+                        )
+                    else:
+                        batch_attention_loss = torch.tensor(0.0, device=device)
                 else:
                     left_ids = batch["left_ids"].to(device)
                     left_mask = batch["left_mask"].to(device)
@@ -988,21 +1273,55 @@ def train(args: argparse.Namespace) -> Dict[str, object]:
                         batch["numeric_field_names"],
                         device,
                     )
-                loss = batch_contrastive_loss + args.attribute_loss_weight * batch_attribute_loss + args.numeric_loss_weight * batch_numeric_loss
+                    if args.attention_distillation_weight > 0:
+                        batch_attention_loss = pair_attention_distillation_loss(
+                            model=model,
+                            left_ids=left_ids,
+                            left_mask=left_mask,
+                            right_ids=right_ids,
+                            right_mask=right_mask,
+                            exact_weight=args.attention_teacher_exact_weight,
+                            digit_weight=args.attention_teacher_digit_weight,
+                            teacher_model=teacher_model,
+                            teacher_temperature=args.attention_teacher_temperature,
+                        )
+                    else:
+                        batch_attention_loss = torch.tensor(0.0, device=device)
+                loss = (
+                    batch_contrastive_loss
+                    + args.attribute_loss_weight * batch_attribute_loss
+                    + args.numeric_loss_weight * batch_numeric_loss
+                    + args.attention_distillation_weight * batch_attention_loss
+                )
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             losses.append(float(loss.detach().cpu()))
+            if args.attention_distillation_weight > 0:
+                attention_losses.append(float(batch_attention_loss.detach().cpu()))
             for key, value in batch_attribute_metrics.items():
                 attribute_metric_history.setdefault(key, []).append(value)
             for key, value in batch_numeric_metrics.items():
                 numeric_metric_history.setdefault(key, []).append(value)
 
-        valid_metrics = evaluate(model, valid_loader, device, args.temperature, args.attribute_loss_weight, args.numeric_loss_weight)
+        valid_metrics = evaluate(
+            model,
+            valid_loader,
+            device,
+            args.temperature,
+            args.attribute_loss_weight,
+            args.numeric_loss_weight,
+            args.attention_distillation_weight,
+            args.attention_teacher_exact_weight,
+            args.attention_teacher_digit_weight,
+            teacher_model,
+            args.attention_teacher_temperature,
+        )
         epoch_metrics = {
             "epoch": float(epoch),
             "train_loss": sum(losses) / max(1, len(losses)),
+            "train_attention_distillation_loss": sum(attention_losses) / max(1, len(attention_losses)),
             **{f"valid_{key}": value for key, value in valid_metrics.items()},
         }
         if hard_valid_records:
@@ -1047,6 +1366,18 @@ def train(args: argparse.Namespace) -> Dict[str, object]:
         "attribute_vocabularies": attribute_vocabularies,
         "numeric_fields": sorted(numeric_field_stats),
         "numeric_field_stats": numeric_field_stats,
+        "attention_distillation_weight": args.attention_distillation_weight,
+        "attention_teacher_exact_weight": args.attention_teacher_exact_weight,
+        "attention_teacher_digit_weight": args.attention_teacher_digit_weight,
+        "attention_teacher_checkpoint": (
+            str(args.attention_teacher_checkpoint)
+            if getattr(args, "attention_teacher_checkpoint", None) is not None
+            else None
+        ),
+        "attention_teacher_kind": (
+            "neural" if getattr(args, "attention_teacher_checkpoint", None) is not None else "byte_rule"
+        ),
+        "attention_teacher_temperature": getattr(args, "attention_teacher_temperature", 1.0),
         "history": history,
     }
     (args.output_dir / "metrics.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1082,9 +1413,44 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attribute-fields", default="")
     parser.add_argument("--attribute-loss-weight", type=float, default=0.0)
     parser.add_argument("--numeric-fields", default="")
-    parser.add_argument("--numeric-feature-mode", choices=["none", "explicit", "sinusoidal"], default="none")
+    parser.add_argument("--numeric-feature-mode", choices=["none", "explicit", "sinusoidal", "xval"], default="none")
     parser.add_argument("--numeric-fourier-dim", type=int, default=16)
     parser.add_argument("--numeric-loss-weight", type=float, default=0.0)
+    parser.add_argument(
+        "--attention-distillation-weight",
+        type=float,
+        default=0.0,
+        help="Weight for the deterministic byte/digit alignment attention-distillation loss.",
+    )
+    parser.add_argument(
+        "--attention-teacher-exact-weight",
+        type=float,
+        default=2.0,
+        help="Teacher mass assigned to exact byte matches.",
+    )
+    parser.add_argument(
+        "--attention-teacher-digit-weight",
+        type=float,
+        default=1.0,
+        help="Teacher mass assigned to digit-to-digit matches.",
+    )
+    parser.add_argument(
+        "--attention-teacher-checkpoint",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a saved ContrastiveStudent checkpoint to use as a NEURAL "
+            "attention-distillation teacher. When set, the frozen teacher's learned "
+            "cross-form attention replaces the deterministic byte/digit teacher as the "
+            "KL target. When unset, the deterministic byte/digit teacher is used."
+        ),
+    )
+    parser.add_argument(
+        "--attention-teacher-temperature",
+        type=float,
+        default=1.0,
+        help="Softmax temperature for the neural teacher's attention distribution.",
+    )
     parser.add_argument("--text-transform", choices=["none", "mask_digits", "strip_digits"], default="none")
     parser.add_argument("--text-weight", type=float, default=1.0)
     parser.add_argument("--lr", type=float, default=1e-3)

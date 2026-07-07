@@ -1,0 +1,394 @@
+%% BioXRep --- arXiv short paper (ACL / BioNLP style, non-anonymous)
+%% Cross-Notation Biomedical Entity Normalization
+%%
+%% Build:  pdflatex main -> bibtex main -> pdflatex main -> pdflatex main
+%% Requires the ACL style files (acl.sty, acl_natbib.sty, acl_natbib.bst) from
+%%   https://github.com/acl-org/acl-style-files
+%% or Overleaf's official "ACL ARR / *ACL Paper Template" gallery entry.
+%% This is the arXiv preprint form: authors are shown (no [review] option).
+%% For a BioNLP/ACL 2027 anonymous submission, change to \usepackage[review]{acl}.
+\documentclass[11pt]{article}
+
+\usepackage[]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{multirow}
+
+\title{Cross-Notation Biomedical Entity Normalization:\\
+       A Contrastive Char-CNN Student and What It Fails to Learn}
+
+\author{First Author \\
+  Affiliation \\
+  \texttt{first@domain} \\\And
+  Second Author \\
+  Affiliation \\
+  \texttt{second@domain} \\}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Biomedical entities appear under many surface notations---approved gene symbols,
+alias symbols, prior symbols, and free-text descriptive names---and mapping among
+them is a core normalization problem. We ask whether a lightweight character-level
+convolutional encoder, trained with a supervised contrastive loss over gene
+equivalence classes, can learn a cross-notation representation that transfers to a
+notation held out of training. On an HGNC alias-retrieval benchmark with a
+fact- and notation-disjoint split, the student reaches $0.985$ in-domain
+validation top-1 but only $0.059 \pm 0.001$ MRR (mean $\pm$ std over $5$ seeds) on
+held-out \texttt{alias\_symbol} queries
+against a $45$k-way pool---below a character $n$-gram lexical floor ($0.077$) and a
+SapBERT dense retriever ($0.134$). We report this negative result alongside four
+reference methods (character $n$-gram, SapBERT dense, a BioSyn-style sparse--dense
+hybrid, and a structured canonical-teacher oracle) evaluated on an identical pool.
+The analysis is consistent across three query notations: an off-the-shelf
+biomedical embedding wins on low-overlap descriptive names, lexical and hybrid
+methods win on high-overlap prior symbols, and a small surface-only student beats
+none of them on the disjoint task it was built to contest. An
+attention-distillation ablation shows that supervising the student with a stronger
+surface-form teacher's attention---deterministic or neural---does not close the gap
+either. We argue the fact-disjoint construction is what exposes the gap, and we
+outline what closing it requires.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+Integrating biomedical information requires recognizing that the same underlying
+object is written many ways. A single gene is referred to by an approved symbol,
+one or more alias symbols, former official symbols, and free-text descriptive
+names; a single variant is written in protein and nucleotide HGVS, in database
+identifiers, and in prose. Normalizing these surface notations onto a shared
+representation is a prerequisite for linking mentions across resources, and neural
+encoders are known to be sensitive to exactly the surface details---numeric and
+notational---that normalization must abstract away
+\citep{wallace2019, xval, thawani2021representing}.
+
+A natural hypothesis is that distilling a compact student against a canonical
+target---the transfer-of-knowledge paradigm that trains a small model to match a
+richer supervisory signal \citep{bucila2006, hinton2015distilling}---can teach the
+student to collapse equivalent notations onto one point in embedding space. We test
+the strongest lightweight version of this hypothesis: a
+byte-level character CNN ($\sim$100k parameters) trained with a supervised
+contrastive loss \citep{supcon} that pulls same-gene forms together, using the
+HGNC approved symbol as the canonical anchor. We then evaluate it under a
+deliberately hard protocol in which an entire query \emph{notation} is held out of
+training, so success cannot come from having seen the target surface form.
+
+Our contribution is a controlled negative result. The student trains correctly
+(in-domain validation top-1 $0.985$) yet fails to transfer: it scores
+$0.059 \pm 0.001$ MRR (mean $\pm$ std over $5$ seeds)
+on the held-out \texttt{alias\_symbol} task, below both a character $n$-gram floor
+and an off-the-shelf SapBERT dense retriever. We situate this result among four
+reference methods on an identical candidate pool and across three query notations,
+and we show that the fact- and notation-disjoint split is what makes the
+generalization gap visible where an in-distribution measurement would hide it.
+
+\section{Related Work}
+\label{sec:related}
+\paragraph{Biomedical entity normalization.} Synonym-aware and self-aligned
+encoders set the current standard for linking surface mentions to canonical
+concepts. BioSyn \citep{biosyn} learns to combine sparse and dense similarity for
+biomedical entity linking, and SapBERT \citep{sapbert} self-aligns a biomedical
+language model over UMLS synonym pairs. We use both as off-the-shelf learned
+baselines.
+\paragraph{Variant nomenclature.} Text mining and standardized representation of
+genetic variants---tmVar and its successors \citep{tmvar, tmvar2, tmvar3} and the
+GA4GH Variation Representation Specification \citep{ga4ghvrs}---frame variant
+equivalence as canonicalization across free text and structured identifiers,
+the same cross-notation problem in a different modality.
+\paragraph{Contrastive representation learning.} Instance-level and class-level
+contrastive objectives \citep{simclr, supcon} and language-supervised alignment of
+paired views \citep{clip} underpin the student's training signal: distinct
+notations of one gene are treated as views to be aligned.
+\paragraph{Knowledge distillation.} Training a compact student to reproduce the
+behavior of a stronger model dates to model compression \citep{bucila2006} and its
+soft-label formulation \citep{hinton2015distilling}, and has been extended from
+matching outputs to matching intermediate representations
+\citep{ba2014deep, romero2015fitnets}, attention maps \citep{zagoruyko2017attention},
+and structural relations via contrastive objectives \citep{tian2020crd}; see
+\citet{gou2021survey} for a survey. In NLP the paradigm compresses large
+pretrained encoders into task-agnostic students \citep{sanh2019distilbert,
+jiao2020tinybert, wang2020minilm}, and in dense retrieval it transfers relevance
+signal across architectures \citep{hofstatter2020improving} and languages
+\citep{reimers2020multilingual}. Our student is trained with a supervised
+contrastive loss anchored on a canonical symbol; we additionally test an
+attention-distillation objective \citep{zagoruyko2017attention} against both a
+deterministic and a trained neural teacher (\S\ref{sec:ablation}), and find neither
+closes the cross-notation gap. We treat these methods as the reference for what a
+\emph{semantically pretrained} teacher-strength signal---which our ablation does not
+supply---would add.
+\paragraph{Numeric and symbolic representation.} A parallel line studies how models
+represent the numeric content of text. Subword tokenizers fragment numbers
+inconsistently, and probing shows encoders capture magnitude only weakly
+\citep{wallace2019, thawani2021representing}. Proposed remedies include
+numeracy-preserving word embeddings \citep{spithourakis2018numeracy,
+sundararaman2020numeracy}, explicit arithmetic units \citep{trask2018nalu},
+injected numerical-reasoning skills \citep{geva2020injecting}, and continuous or
+frequency-based value encodings---sinusoidal position features
+\citep{vaswani2017attention}, random Fourier features \citep{tancik2020fourier}, and
+continuous numeric tokenization \citep{xval}. Gene-symbol normalization is the
+non-numeric half of the cross-notation problem; the numeric half---HGVS positions,
+laboratory values, unit conversions---is where these value-aware encoders become the
+natural tools, and we treat them as the reference point for extending the benchmark
+beyond symbols. On an HGVS cross-notation retrieval task with position-confounded
+hard negatives, we find that none of these value-aware input encodings---an explicit
+normalized scalar, sinusoidal features, or xVal-style continuous tokenization
+\citep{xval}---improves hard top-1 over a text-only encoder, and neither does an
+auxiliary numeric-consistency loss. On the full candidate pool the numeric features
+appear to help, but that gain is an artifact of trivially rejecting random-fill
+decoys; when the positive is scored against only its position-matched hard negatives
+the ranking inverts and text-only is strongest, because the shared position is a
+confound rather than a discriminator. The numeric half thus inherits the same
+capacity-limited negative as the symbolic half.
+\paragraph{Clinical sequence models.} Representation learning over coded EHR
+sequences \citep{medbert, behrt, clmbr, gbert} shares the multi-notation setting
+but targets temporal streams of clinical codes rather than surface-form
+normalization of entity strings.
+
+\section{Task and Data}
+\label{sec:data}
+We build gene-alias equivalence classes from HGNC, where each class is one gene and
+its members are the gene's forms under several notations. Relevance is defined by a
+shared gene identifier (\texttt{fact\_id}). The retrieval task is: given an
+alias-form query, retrieve the gene's \texttt{approved\_symbol} from a shared
+candidate pool. We evaluate three query notations against one pool:
+
+\begin{itemize}
+\itemsep0.2em
+\item \texttt{alias\_symbol} (held-out test split): the fact- and notation-disjoint
+generalization task.
+\item \texttt{prev\_symbol}: former official symbols, with high surface overlap with
+the approved symbol.
+\item \texttt{alias\_name}: free-text descriptive names, with low surface overlap.
+\end{itemize}
+
+The candidate pool is the $44{,}997$ approved symbols from the training split.
+Queries are capped at $2{,}000$ per task, drawn from $44{,}718$ available held-out
+\texttt{alias\_symbol} rows. Splits are fact-disjoint: the gene identifiers used to
+form the \texttt{alias\_symbol} test set are excluded from training, so no test
+gene is seen in any notation during training. All methods are scored on the
+identical $($queries, pool$)$ pair per task, making within-task comparison direct.
+
+\section{Method}
+\label{sec:method}
+The student is a byte-level character CNN (hidden dimension $64$, projection
+dimension $128$, $\sim$100k parameters) that maps a surface string to an
+$L_2$-normalized embedding. It is trained for $3$ epochs with a supervised
+contrastive loss \citep{supcon} (temperature $0.07$) using class-aware batches over
+$22{,}364$ HGNC equivalence classes, with the \texttt{alias\_symbol} test genes
+excluded. Critically, the \texttt{alias\_symbol} notation is \emph{entirely absent}
+from training: the student only ever sees \texttt{approved\_symbol},
+\texttt{prev\_symbol}, \texttt{alias\_name}, \texttt{prev\_name}, and
+\texttt{approved\_name} forms. Retrieval scores queries against the pool by cosine
+similarity of these embeddings, through the same flat-pool evaluation harness used
+for every baseline. Training loss decreases monotonically ($2.69 \rightarrow 1.41$)
+and in-domain symbol$\leftrightarrow$name validation top-1 reaches $0.985$,
+confirming the objective is learned.
+
+\section{Baselines}
+\label{sec:baselines}
+We compare against four reference methods on the identical pool:
+\textbf{character $n$-gram}, the cosine of character $3$-gram TF--IDF vectors, a
+purely lexical floor; \textbf{SapBERT dense} \citep{sapbert}, the cosine of
+$L_2$-normalized CLS embeddings; \textbf{BioSyn-style hybrid} \citep{biosyn},
+$(1-\lambda)\cdot\text{sparse} + \lambda\cdot\text{dense}$ with $\lambda=0.7$; and
+the \textbf{canonical teacher}, an exact match on the structured HGNC
+\texttt{symbol} attribute that scores $1.000$ by construction and serves as a
+structured ceiling rather than a learned competitor.
+
+\section{Results}
+\label{sec:results}
+Table~\ref{tab:results} reports top-1, top-5, and MRR for all methods on the three
+query notations. The student's only fact- and notation-disjoint measurement is
+\texttt{alias\_symbol}; its \texttt{prev\_symbol} and \texttt{alias\_name} rows are
+in-distribution (train-seen) and are marked accordingly.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Notation} & \textbf{Method} & \textbf{top-1} & \textbf{top-5} & \textbf{MRR} \\
+\midrule
+\multirow{5}{*}{\shortstack[l]{\texttt{alias\_}\\\texttt{symbol}\\(held-out)}}
+ & Char $n$-gram        & 0.047 & 0.108 & 0.077 \\
+ & SapBERT dense        & 0.080 & 0.190 & \textbf{0.134} \\
+ & BioSyn hybrid        & 0.077 & 0.182 & 0.129 \\
+ & Char-CNN student$^{\ddagger}$ & 0.041 & 0.075 & 0.059 \\
+ & Canonical teacher    & 1.000 & 1.000 & 1.000 \\
+\midrule
+\multirow{5}{*}{\texttt{prev\_symbol}}
+ & Char $n$-gram        & 0.146 & 0.276 & 0.205 \\
+ & SapBERT dense        & 0.140 & 0.297 & 0.219 \\
+ & BioSyn hybrid        & 0.175 & 0.325 & \textbf{0.250} \\
+ & Char-CNN student$^{\dagger}$ & 0.118 & 0.203 & 0.158 \\
+ & Canonical teacher    & 1.000 & 1.000 & 1.000 \\
+\midrule
+\multirow{5}{*}{\texttt{alias\_name}}
+ & Char $n$-gram        & 0.026 & 0.056 & 0.042 \\
+ & SapBERT dense        & 0.234 & 0.404 & \textbf{0.316} \\
+ & BioSyn hybrid        & 0.225 & 0.398 & 0.308 \\
+ & Char-CNN student$^{\dagger}$ & 0.026 & 0.053 & 0.042 \\
+ & Canonical teacher    & 1.000 & 1.000 & 1.000 \\
+\bottomrule
+\end{tabular}
+\caption{Retrieval of the \texttt{approved\_symbol} over a shared $44{,}997$-symbol
+pool ($2{,}000$ queries per notation). $^{\dagger}$train-seen: the student saw this
+query notation during training, so these are in-distribution measurements, not
+held-out generalization. Best learned MRR per notation in \textbf{bold}; the
+canonical teacher is a structured oracle upper bound.
+$^{\ddagger}$the held-out \texttt{alias\_symbol} student row is the mean over $5$
+seeds ($\{13,17,23,42,101\}$; per-seed std $\le 0.002$ on every metric); the
+deterministic lexical, SapBERT, and BioSyn methods are seed-invariant, and the
+train-seen ($^{\dagger}$) student rows are single-seed.}
+\label{tab:results}
+\end{table}
+
+Three patterns hold across the table. On \texttt{alias\_name}, where surface
+overlap is minimal, SapBERT dense lifts MRR from $0.042$ (lexical) to $0.316$
+because the semantic encoder resolves descriptive names that share no characters
+with the symbol. On \texttt{prev\_symbol}, where overlap is high, the lexical
+baseline is already competitive ($0.205$) and the BioSyn hybrid is best ($0.250$),
+confirming that sparse and dense signals are complementary when both are
+informative. On the fact-disjoint \texttt{alias\_symbol} task every method is low
+(MRR $\leq 0.134$): short alias symbols carry little semantic context and often no
+shared substring, so neither a general biomedical embedding nor character overlap
+resolves them reliably---this is where a notation-invariant encoder has the most
+headroom.
+
+\section{Analysis}
+\label{sec:analysis}
+The char-CNN student does not beat any reference method on the task it was added to
+contest. It scores $0.059 \pm 0.001$ MRR on \texttt{alias\_symbol} (mean $\pm$ std
+over $5$ seeds; best seed $0.060$), below SapBERT dense
+($0.134$) and even the character $n$-gram floor ($0.077$)---a gap of more than $15$
+seed standard deviations, so the ranking is not an artifact of a single training
+run. Two factors explain the
+failure. First, \texttt{alias\_symbol} is a held-out \emph{notation}, not merely
+held-out facts: the student never sees an \texttt{alias\_symbol} form and must
+transfer from other short-symbol notations whose surface statistics only partly
+overlap. Second, a $\sim$100k-parameter byte-level char-CNN encodes little beyond
+character composition; on short symbols that share few characters with the approved
+symbol it has neither the lexical precision of TF--IDF $n$-grams nor the biomedical
+semantics SapBERT acquired from UMLS self-alignment. The $0.985$ in-domain
+validation top-1 confirms the model fit its training distribution well---it learned
+a same-class surface similarity that does not transfer to an unseen short-symbol
+notation against a $45$k-way pool.
+
+The train-seen rows corroborate this reading. Even where the query notation was in
+the training distribution, the small encoder trails the off-the-shelf baselines:
+it carries some lexical signal on \texttt{prev\_symbol} (MRR $0.158$, which overlaps
+approved symbols) but collapses to the lexical floor on free-text
+\texttt{alias\_name} (MRR $0.042$), where it has no semantic capacity. The negative
+result is therefore not an artifact of the held-out notation alone; the capacity of
+a surface-only encoder is the deeper limit.
+
+\subsection{Does attention distillation help?}
+\label{sec:ablation}
+Because the compression paradigm that motivates this work trains a student to
+match a stronger model's \emph{internal} behavior---attention in particular
+\citep{zagoruyko2017attention}---we test whether adding an attention-distillation
+objective rescues the student. We compare three arms with identical student
+configuration (char-CNN, hidden $64$, projection $128$, $3$ epochs,
+same fact-disjoint split), each trained across $5$ random seeds
+($\{13,17,23,42,101\}$), varying only the auxiliary loss that supervises the
+student's cross-form character attention $\mathrm{softmax}(f_s f_t^{\top}/\sqrt{d})$:
+(i) contrastive only; (ii) a \emph{deterministic} byte/digit teacher that places
+mass on exact-character and digit--digit alignments; and (iii) a \emph{neural}
+teacher---a frozen, higher-capacity char-CNN (hidden $128$, $6$ epochs, validation
+top-1 $0.677$ versus the student's $0.582$) whose \emph{learned} attention is the
+KL target. The distillation loss is active in both (ii) and (iii)
+(train attention loss $>0$ throughout).
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Student objective} & \textbf{MRR} & \textbf{top-1} & \textbf{inv.\ ratio} \\
+\midrule
+Contrastive only                 & $0.055 \pm 0.002$ & $0.036 \pm 0.003$ & $0.789 \pm 0.010$ \\
+\;\; + byte-rule attn.\ distill   & $0.056 \pm 0.002$ & $0.037 \pm 0.004$ & $0.750 \pm 0.042$ \\
+\;\; + neural-teacher attn.\ distill & $0.056 \pm 0.001$ & $0.038 \pm 0.002$ & $0.761 \pm 0.026$ \\
+\bottomrule
+\end{tabular}
+\caption{Attention-distillation ablation on held-out \texttt{alias\_symbol}
+(same $2{,}000$ queries / $45$k pool as Table~\ref{tab:results}), reported as
+mean $\pm$ standard deviation across $5$ random seeds. The MRR difference between
+the contrastive baseline and either distillation arm ($\sim\!0.001$) is well
+within one standard deviation of seed variance. The invariance ratio is the
+mean within-class over between-class embedding cosine distance (lower is more
+notation-invariant); the three arms are indistinguishable once seed variance is
+accounted for. Neither teacher improves held-out retrieval.}
+\label{tab:ablation}
+\end{table}
+
+Neither form of attention distillation closes the gap (Table~\ref{tab:ablation}).
+Across five seeds the deterministic and neural teachers both raise mean held-out
+MRR by only $\sim\!0.001$ over the contrastive-only baseline ($0.055$)---a shift
+smaller than the per-arm seed standard deviation, and therefore not distinguishable
+from noise. The neural teacher carries a demonstrably stronger alignment signal
+(validation top-1 $0.677$ versus the student's $0.582$) yet confers no measurable
+retrieval benefit, and the three arms' invariance ratios overlap once seed variance
+is included. Distilling a better \emph{surface-form} attention map does not induce
+notation invariance here---consistent with the reading that the limit is
+representational capacity, not the supervisory target's quality. This is a
+test of attention-map matching between two surface-only encoders; it does not test
+distillation from a \emph{semantically pretrained} teacher (e.g.\ SapBERT-strength
+embeddings), which remains the open path (\S\ref{sec:conclusion}).
+
+\section{Conclusion}
+\label{sec:conclusion}
+A lightweight contrastive char-CNN student does not, on its own, yield a
+transferable cross-notation biomedical representation: it is beaten by both a
+lexical floor and a general biomedical embedding on fact- and notation-disjoint
+alias normalization. The result is only visible under a disjoint split; an
+in-distribution measurement ($0.985$ top-1) would have suggested the opposite.
+Closing the \texttt{alias\_symbol} gap requires what the current student
+deliberately omits: a semantically pretrained backbone, distillation from a
+SapBERT- or teacher-strength \emph{semantic} signal \citep{hinton2015distilling,
+tian2020crd, hofstatter2020improving}---as opposed to the surface-form attention
+teachers we ablate in \S\ref{sec:ablation}, which do not help---or exposure to the
+target notation with notation-balanced sampling. We release the benchmark, the four reference methods,
+and the student adapter to support that work.
+
+\section*{Limitations}
+The headline benchmark covers a single entity type (genes, via HGNC) with a
+lightweight student; the numeric probe adds one further type (variants, via HGVS
+cross-notation retrieval) but is likewise confined to a small char-CNN. Whether the
+negative result extends to larger surface-only encoders or to other entity types
+(chemicals, phenotypes) is not established here. In particular, the clinical
+lab-value instantiation of the numeric half---held-out unit conversions and
+reference-range normalization over real EHR values, which would require gated
+PhysioNet/MIMIC-IV access---is left to future work; we make no lab-value claim.
+Queries are capped at $2{,}000$ per notation for tractable CPU
+evaluation, which bounds the precision of the reported metrics. The canonical
+teacher is a structured oracle and is reported only to bracket the achievable
+range, not as a learnable target.
+
+Finally, the held-out \texttt{alias\_symbol} task is not perfectly well-posed from
+surface form alone: some alias symbols are genuinely ambiguous or share no
+substring with their approved symbol, so no notation-invariant encoder---however
+large---can rank every query correctly from the string alone. The reference
+methods bound how much of the task \emph{is} resolvable with lexical or dense
+biomedical signal ($0.077$ and $0.134$ MRR respectively), and the low absolute
+ceiling reflects this partial identifiability rather than any single model's
+failure; our claim is only the relative one, that the char-CNN student does not
+reach even that resolvable portion.
+
+\section*{Ethics Statement}
+All experiments use public reference terminologies (HGNC gene nomenclature) and
+contain no patient data or personally identifiable information. The work is a
+methods study on entity normalization and poses no direct dual-use concern.
+
+\bibliography{references}
+
+\end{document}
