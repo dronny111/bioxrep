@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from bioxrep.data.io import read_jsonl
-from bioxrep.models.char_encoder import CharCNNEncoder, CharMeanEncoder
+from bioxrep.models.char_encoder import CharCNNEncoder, CharMeanEncoder, CharTransformerEncoder
 
 
 def normalize_attribute_value(value: object) -> str | None:
@@ -1067,6 +1067,15 @@ def build_encoder(args: argparse.Namespace) -> nn.Module:
             kernel_sizes=kernel_sizes,
             dropout=args.dropout,
         )
+    if args.encoder == "transformer":
+        return CharTransformerEncoder(
+            hidden_dim=args.hidden_dim,
+            projection_dim=args.projection_dim,
+            num_layers=args.transformer_layers,
+            num_heads=args.transformer_heads,
+            max_length=args.max_length,
+            dropout=args.dropout,
+        )
     raise ValueError(f"Unknown encoder: {args.encoder}")
 
 
@@ -1406,8 +1415,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--projection-dim", type=int, default=128)
-    parser.add_argument("--encoder", choices=["mean", "cnn"], default="mean")
+    parser.add_argument("--encoder", choices=["mean", "cnn", "transformer"], default="mean")
     parser.add_argument("--kernel-sizes", default="3,5,7")
+    parser.add_argument("--transformer-layers", type=int, default=2,
+                        help="Number of self-attention layers (encoder=transformer).")
+    parser.add_argument("--transformer-heads", type=int, default=4,
+                        help="Number of attention heads (encoder=transformer).")
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--attribute-fields", default="")
