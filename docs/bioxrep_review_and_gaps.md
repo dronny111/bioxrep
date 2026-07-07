@@ -16,8 +16,9 @@ The project is in good shape as a **benchmark-and-honest-baselines** effort.
 - **Rigorous evaluation design.** The HGVS "strict hard pool" (decoys share the
   query's parsed `protein_position` + `cdna_position`) is the standout
   contribution: it correctly exposes numeric-position features as shortcuts
-  (top-5 ~= 1.0 but hard top-1 *drops*), and shows text-only + more facts wins on
-  hard top-1 (0.6995 vs 0.4875 sinusoidal).
+  (top-5 ~= 1.0 but hard top-1 *drops*), and the matched-only projection shows
+  the text-only byte encoder strongest once random-fill decoys are removed
+  (0.9195 vs 0.906 xVal, 0.900 explicit, and 0.498 sinusoidal).
 - **Intellectually honest reporting.** The HGNC char-CNN student is written up as
   a clean negative result (0.059±0.001 MRR over 5 seeds, below both the lexical
   floor 0.077 and SapBERT dense 0.134), with the in-domain 0.985 top-1 shown as the trap a
@@ -62,10 +63,11 @@ evaluated on a real HGVS cross-notation task (ClinVar, protein↔nucleotide
 expression) with a position-confounded hard benchmark. Holding input to text-only
 and varying only the loss weight (0.0 / 0.1 / 0.5, 5 seeds' worth of scaffolding
 reused), hard top-1 is `0.7275 → 0.705 → 0.7145` — all CIs overlap, so the
-auxiliary loss does **not** improve hard retrieval. Combined with the earlier
-numeric-*feature* ablation (sinusoidal/explicit position also hurts hard top-1),
-Track B's numeric objective is a closed negative result: shared position is a
-confound, not a discriminator. See `docs/bioxrep_hgvs_results.md`
+auxiliary loss does **not** improve hard retrieval. Combined with the corrected
+numeric-*feature* ablation (explicit, sinusoidal, and xVal-style position inputs
+all fail to beat text-only on the strict matched-only pool), Track B's numeric
+objective is a closed negative result: shared position is a confound, not a
+discriminator. See `docs/bioxrep_hgvs_results.md`
 (§Numeric-consistency-loss ablation) and `scripts/run_trackb_numeric_loss.sh`.
 A pipeline fix landed alongside: the `_numeric_50k` source had 702 duplicate
 `fact_id`s that could leak across the split; dedup-by-`fact_id` restores a
@@ -79,8 +81,9 @@ instantiation tested (negative), not the lab-value one.
 The brief promises attribute probing, an invariance ratio (between-class /
 within-class distance), and embedding visualization. The trainer *has*
 attribute/numeric heads, and `bioxrep.eval.invariance_ratio` now computes the
-distance ratio for saved student checkpoints. No invariance-ratio result,
-probing table, or embedding visualization is frozen anywhere yet.
+distance ratio for saved student checkpoints. The attention-distillation table in
+`main.tex` reports invariance ratio for the three HGNC arms; broader probing
+tables and embedding visualizations are still absent.
 
 ### 5. Statistical rigor — partly addressed (was: none in the frozen tables)
 Both docs mention `--bootstrap` CIs and multi-seed sweeps as *available*, and most
@@ -101,10 +104,10 @@ train-seen (`†`) student rows remain single-seed (not the headline claim).
 
 ### 6. Reproducibility gap between docs and stored artifacts
 The HGNC comparison outputs and HGNC student checkpoint are saved as artifacts,
-but **none of the HGVS result JSONs or HGVS checkpoints referenced in
-`bioxrep_hgvs_results.md` are in the artifact store** — they exist only on local
-disk. The "fully reproducible" claim isn't backed by saved provenance for the
-HGVS flagship.
+and the current HGVS/Track-B JSONs and checkpoints exist locally under
+`outputs/trackb*`. Because `outputs/` is git-ignored, an auditable paper release
+should commit or otherwise publish the small result JSONs and logs (not the large
+checkpoints) so the HGVS tables are backed by durable provenance.
 
 ### 7. Baseline coverage is narrower than the brief
 Implemented: char n-gram, char-CNN, SapBERT dense, BioSyn hybrid, canonical
@@ -195,11 +198,12 @@ between sessions.
    variant is distillation from a *semantically pretrained* (SapBERT-strength)
    teacher on the same byte grid — the surface-only teachers tested here do not
    substitute for it.
-2. **Cheap, high-value for the current paper:** add multi-seed mean +/- std and
-   bootstrap CIs to both frozen tables, and add the invariance-ratio metric (the
-   harness already produces embeddings).
-3. **Provenance:** save the HGVS result JSONs and checkpoints as artifacts so the
-   flagship table is backed by stored files.
+2. **Polish for the current paper:** keep the release-facing docs synchronized
+   with the multi-seed/CI tables, and ensure the invariance-ratio definition is
+   consistently described as between/within (higher is better).
+3. **Provenance:** publish the small HGVS result JSONs/logs in a committed or
+   release artifact location so the flagship table is durable outside local
+   `outputs/`.
 4. ~~**Add the xVal baseline** — cited as motivation but not benchmarked.~~
    **DONE** — benchmarked in the 4-arm feature-mode ablation (see section 7);
    negative holds on the strict matched-only pool.
