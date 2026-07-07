@@ -19,8 +19,8 @@ The project is in good shape as a **benchmark-and-honest-baselines** effort.
   (top-5 ~= 1.0 but hard top-1 *drops*), and shows text-only + more facts wins on
   hard top-1 (0.6995 vs 0.4875 sinusoidal).
 - **Intellectually honest reporting.** The HGNC char-CNN student is written up as
-  a clean negative result (0.051 MRR, below both the lexical floor 0.077 and
-  SapBERT dense 0.134), with the in-domain 0.985 top-1 shown as the trap a
+  a clean negative result (0.059±0.001 MRR over 5 seeds, below both the lexical
+  floor 0.077 and SapBERT dense 0.134), with the in-domain 0.985 top-1 shown as the trap a
   disjoint split avoids.
 - **A near-submittable short paper** (`main.tex`) with CrossRef/OpenAlex/arXiv-
   verified references, reframed around the negative result.
@@ -90,9 +90,14 @@ attention-distillation ablation is now reported as mean ± std over 5 seeds
 `outputs/multiseed/aggregate_multiseed.json`): MRR `0.055±0.002` (contrastive) vs
 `0.056±0.002` / `0.056±0.001` (byte-rule / neural) — the ~0.001 gap is within one
 seed σ, strengthening the negative over the earlier single-seed bootstrap. The
-Track B numeric-loss arms carry bootstrap CIs. Still single-seed: the main
-HGNC results table (`0.051 vs 0.077` lexical floor) — that headline comparison
-should get the same multi-seed treatment before submission.
+Track B numeric-loss arms carry bootstrap CIs. **The main HGNC results table is now
+multi-seeded too**: the headline held-out `alias_symbol` char-CNN student row is the
+mean over 5 seeds (`{13,17,23,42,101}`, `scripts/run_multiseed_hgnc_main.sh`,
+`outputs/multiseed_hgnc/aggregate_hgnc_multiseed.json`) — MRR `0.059±0.001`
+(top-1 `0.041±0.002`, top-5 `0.075±0.001`), still below the char n-gram lexical
+floor `0.077` and SapBERT `0.134` by >15 seed σ, so the headline negative is robust
+to seed. The deterministic lexical/SapBERT/BioSyn rows are seed-invariant; the
+train-seen (`†`) student rows remain single-seed (not the headline claim).
 
 ### 6. Reproducibility gap between docs and stored artifacts
 The HGNC comparison outputs and HGNC student checkpoint are saved as artifacts,

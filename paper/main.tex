@@ -41,7 +41,8 @@ convolutional encoder, trained with a supervised contrastive loss over gene
 equivalence classes, can learn a cross-notation representation that transfers to a
 notation held out of training. On an HGNC alias-retrieval benchmark with a
 fact- and notation-disjoint split, the student reaches $0.985$ in-domain
-validation top-1 but only $0.051$ MRR on held-out \texttt{alias\_symbol} queries
+validation top-1 but only $0.059 \pm 0.001$ MRR (mean $\pm$ std over $5$ seeds) on
+held-out \texttt{alias\_symbol} queries
 against a $45$k-way pool---below a character $n$-gram lexical floor ($0.077$) and a
 SapBERT dense retriever ($0.134$). We report this negative result alongside four
 reference methods (character $n$-gram, SapBERT dense, a BioSyn-style sparse--dense
@@ -80,7 +81,8 @@ deliberately hard protocol in which an entire query \emph{notation} is held out 
 training, so success cannot come from having seen the target surface form.
 
 Our contribution is a controlled negative result. The student trains correctly
-(in-domain validation top-1 $0.985$) yet fails to transfer: it scores $0.051$ MRR
+(in-domain validation top-1 $0.985$) yet fails to transfer: it scores
+$0.059 \pm 0.001$ MRR (mean $\pm$ std over $5$ seeds)
 on the held-out \texttt{alias\_symbol} task, below both a character $n$-gram floor
 and an off-the-shelf SapBERT dense retriever. We situate this result among four
 reference methods on an identical candidate pool and across three query notations,
@@ -214,7 +216,7 @@ in-distribution (train-seen) and are marked accordingly.
  & Char $n$-gram        & 0.047 & 0.108 & 0.077 \\
  & SapBERT dense        & 0.080 & 0.190 & \textbf{0.134} \\
  & BioSyn hybrid        & 0.077 & 0.182 & 0.129 \\
- & Char-CNN student     & 0.035 & 0.064 & 0.051 \\
+ & Char-CNN student$^{\ddagger}$ & 0.041 & 0.075 & 0.059 \\
  & Canonical teacher    & 1.000 & 1.000 & 1.000 \\
 \midrule
 \multirow{5}{*}{\texttt{prev\_symbol}}
@@ -236,7 +238,11 @@ in-distribution (train-seen) and are marked accordingly.
 pool ($2{,}000$ queries per notation). $^{\dagger}$train-seen: the student saw this
 query notation during training, so these are in-distribution measurements, not
 held-out generalization. Best learned MRR per notation in \textbf{bold}; the
-canonical teacher is a structured oracle upper bound.}
+canonical teacher is a structured oracle upper bound.
+$^{\ddagger}$the held-out \texttt{alias\_symbol} student row is the mean over $5$
+seeds ($\{13,17,23,42,101\}$; per-seed std $\le 0.002$ on every metric); the
+deterministic lexical, SapBERT, and BioSyn methods are seed-invariant, and the
+train-seen ($^{\dagger}$) student rows are single-seed.}
 \label{tab:results}
 \end{table}
 
@@ -255,8 +261,11 @@ headroom.
 \section{Analysis}
 \label{sec:analysis}
 The char-CNN student does not beat any reference method on the task it was added to
-contest. It scores $0.051$ MRR on \texttt{alias\_symbol}, below SapBERT dense
-($0.134$) and even the character $n$-gram floor ($0.077$). Two factors explain the
+contest. It scores $0.059 \pm 0.001$ MRR on \texttt{alias\_symbol} (mean $\pm$ std
+over $5$ seeds; best seed $0.060$), below SapBERT dense
+($0.134$) and even the character $n$-gram floor ($0.077$)---a gap of more than $15$
+seed standard deviations, so the ranking is not an artifact of a single training
+run. Two factors explain the
 failure. First, \texttt{alias\_symbol} is a held-out \emph{notation}, not merely
 held-out facts: the student never sees an \texttt{alias\_symbol} form and must
 transfer from other short-symbol notations whose surface statistics only partly
