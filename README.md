@@ -19,13 +19,15 @@ validated method result. Read the claims with that scope:
   (char n-gram lexical floor, SapBERT dense, BioSyn-style hybrid, canonical-teacher
   oracle ceiling); and a lightweight contrastive char-CNN student with a
   supervised-contrastive + optional attribute/numeric-consistency objective.
-  The trainer also includes an optional deterministic byte/digit alignment
-  teacher (`--attention-distillation-weight`) that distills cross-character
-  attention distributions into the student.
-- **Not yet delivered:** a trained neural seq2seq notation-translator teacher or
-  positive method result from the attention-distillation objective. The current
-  distillation path is an implemented alignment-teacher baseline; the roadmap's
-  stronger neural teacher remains an experiment to run.
+  The trainer also includes optional attention-map distillation
+  (`--attention-distillation-weight`) from either a deterministic byte/digit
+  alignment teacher or a frozen neural char-CNN teacher
+  (`--attention-teacher-checkpoint`).
+- **Not yet delivered:** a trained neural seq2seq notation-translator teacher,
+  distillation from a semantically pretrained teacher, or a positive method result
+  from the attention-distillation objective. The implemented byte-rule and frozen
+  neural surface-form teachers have both been tested and do **not** close the
+  held-out-notation gap.
 - **Headline method result is negative.** On the protagonist fact- and
   notation-disjoint task (`alias_symbol`), the trained student loses to SapBERT and
   to the lexical floor. The repository therefore does **not** yet contain positive
@@ -60,16 +62,19 @@ Held-out `alias_symbol` queries retrieved against the approved-symbol pool
 (~45k candidates). The `alias_symbol` notation is held out for validation.
 
 | Method | MRR |
-| --- | ---: | --- |
+| --- | ---: |
 | Canonical teacher (exact structured match) | **1.000**|
 | SapBERT dense | **0.134** |
 | Character n-gram (TF–IDF cosine) | **0.077** |
-| Contrastive char-CNN student | **0.051** |
+| Contrastive char-CNN student | **0.059 ± 0.001** |
 
-**The lightweight distilled student.** A byte-level char-CNN
+**The lightweight contrastive student.** A byte-level char-CNN
 (~100k params) trained with supervised contrastive loss over 22,364 HGNC
-equivalence classes reaches **0.985 in-domain validation top-1**  and **0.051 MRR** on the held-out `alias_symbol` notation,
-*below* both the SapBERT dense retriever (0.134) and the char n-gram. 
+equivalence classes reaches **0.985 in-domain validation top-1** and
+**0.059 ± 0.001 MRR** on the held-out `alias_symbol` notation, *below* both the
+SapBERT dense retriever (0.134) and the char n-gram lexical floor (0.077).
+Adding byte-rule or frozen neural attention distillation changes held-out MRR by
+only about 0.001, within seed variance.
 
 Off-the-shelf methods trade places by notation: SapBERT dense wins most on the
 low-surface-overlap `alias_name` notation (0.316 vs. char n-gram 0.042), while
@@ -79,35 +84,27 @@ the BioSyn-style sparse+dense hybrid is strongest on the high-overlap
 ### 2. HGVS variant-notation alignment (protein ↔ nucleotide, position-confounded hard pool)
 
 Aligning protein HGVS to nucleotide HGVS on a fact-disjoint split, scored against
-hard candidate pools seeded with position-confounded decoys — each query is
-guaranteed at least one decoy that shares its parsed `protein_position` and
-`cdna_position`, with the remaining slots filled by random test-only decoys to a
-fixed pool size (2,000 queries, 20 candidates each). The builder now reports the
-realized matched-vs-random decoy composition; top-5 in particular is easier than
-top-1 because the random-fill decoys are trivially separable on position, so read
-the two columns with that composition in mind.
+position-confounded candidate pools. The current paper-grade analysis reports both
+the full 20-candidate pool (about 2.25 position-matched decoys plus 16.75 random
+fill decoys per query) and a stricter matched-only pool that drops the easy random
+fill. The decisive number is matched-only hard top-1:
 
-| Model | Hard top-1 | Hard top-5 | Hard MRR |
-| --- | ---: | ---: | ---: |
-| **Text-only char-CNN** | **0.6995** | **0.9465** | **0.812** |
-| Sinusoidal text+numeric CNN | 0.4875 | 0.9985 | 0.701 |
-| Masked-digit text+numeric CNN | 0.5385 | 0.9995 | 0.731 |
-| Numeric-only sinusoidal CNN | 0.3480 | 0.9840 | 0.610 |
-| Character n-gram baseline | 0.154 | 0.3995 | 0.296 |
+| Numeric input mode | Matched-only top-1 | 95% CI | MRR |
+| --- | ---: | :---: | ---: |
+| **None (text-only / digit-token)** | **0.9195** | [0.908, 0.930] | **0.957** |
+| xVal-style continuous tokenization | 0.9060 | [0.892, 0.919] | 0.951 |
+| Explicit normalized scalar | 0.9000 | [0.887, 0.913] | 0.947 |
+| Sinusoidal Fourier features | 0.4980 | [0.477, 0.518] | 0.708 |
 
-**Numeric position features help easy validation but hurt the hard top-1.** On
-easy pair validation, adding sinusoidal `protein_position + cdna_position`
-features makes retrieval look near-perfect (top-1 ≈ 1.000). But against the
-position-confounded hard decoys — which share those exact fields — the numeric
-component is identical for the positive and the hard negatives, so it dilutes the
-discriminative text signal and the plain text-only CNN takes hard top-1. (All
-rows here are trained on the same 50k-pair scale, so this table isolates the
-feature ablation, not a training-scale effect; the separate scaling comparison
-lives in [`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md).) Note the
-task within a shared-position pool reduces to mapping the amino-acid change to the
-correct codon change, so the text-only win is as much learned genetic-code
+**Numeric position features can look helpful on the full pool, but not on the
+matched-only pool.** Explicit and xVal-style features reject random-fill decoys
+trivially, so they appear to win when the pool contains many easy negatives. Once
+the positive is ranked only against decoys sharing the same parsed
+`protein_position` and `cdna_position`, the text-only byte encoder is strongest.
+Within a shared-position pool, the task largely reduces to mapping the amino-acid
+change to the correct codon change, so the result is as much learned genetic-code
 structure as generic notation invariance. Full ablation logs and interpretation
-in [`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md).
+are in [`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md).
 
 The recurring lesson across both benchmarks: **evaluation design decides the
 conclusion.** Fact-disjoint splits and position-confounded hard pools expose gaps

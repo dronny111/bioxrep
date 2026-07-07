@@ -53,7 +53,10 @@ Training/evaluation artifacts:
 
 ## Main Results
 
-All learned models use the same lightweight character CNN encoder and are evaluated on the same full 2k strict-filled hard benchmark.
+All learned models use the same lightweight character CNN encoder and are
+evaluated on the corrected deduped fact-disjoint split. We report both the full
+2k strict-filled hard benchmark and a matched-only projection that drops random
+fill decoys from the same records.
 
 The numeric **input-feature** ablation compares how the position is injected, holding
 everything else fixed (`seed 13`, 3 epochs, char-CNN hidden 64 / proj 128, corrected
@@ -105,7 +108,17 @@ Two caveats for paper framing. (1) All rows above are trained at the same 50k-pa
 
 ## Numeric-consistency-loss ablation
 
-The table above ablates numeric **input features** (`--numeric-feature-mode {none,explicit,sinusoidal}`), which change what the encoder *reads*. A distinct question is whether the auxiliary numeric **consistency loss** (`--numeric-loss-weight`) helps: this adds a per-field linear head that regresses each form's embedding to its normalized `protein_position` / `cdna_position` target (MSE) plus a left/right agreement term, forcing the embedding to be numerically decodable without adding any numeric input channel. To isolate the loss cleanly, all three arms keep input `--numeric-feature-mode none` (text-only) and vary only `--numeric-loss-weight`. All arms are trained on the corrected fact-disjoint deduped split (see note below), `seed 13`, and evaluated on the full 2k strict-filled hard benchmark.
+The table above ablates numeric **input features** (`--numeric-feature-mode
+{none,explicit,sinusoidal,xval}`), which change what the encoder *reads*. A
+distinct question is whether the auxiliary numeric **consistency loss**
+(`--numeric-loss-weight`) helps: this adds a per-field linear head that regresses
+each form's embedding to its normalized `protein_position` / `cdna_position`
+target (MSE) plus a left/right agreement term, forcing the embedding to be
+numerically decodable without adding any numeric input channel. To isolate the
+loss cleanly, all three arms keep input `--numeric-feature-mode none` (text-only)
+and vary only `--numeric-loss-weight`. All arms are trained on the corrected
+fact-disjoint deduped split (see note below), `seed 13`, and evaluated on the full
+2k strict-filled hard benchmark.
 
 | `--numeric-loss-weight` | Hard top-1 | 95% CI | Hard top-5 |
 | ---: | ---: | :---: | ---: |
@@ -115,7 +128,16 @@ The table above ablates numeric **input features** (`--numeric-feature-mode {non
 
 The auxiliary numeric-consistency loss does **not** improve hard top-1: all three CIs overlap the text-only baseline, and the point estimates for the weighted arms sit slightly below it. Forcing the embedding to be numerically decodable does not add notation-invariant retrieval signal here — consistent with the feature-mode finding that position information is a confound, not a discriminator, in a position-matched hard pool. This is gap #3 (untested numeric consistency loss) closed as a negative result.
 
-**Leakage-fix note.** While rebuilding the split for this ablation, `verify_no_leakage.py` flagged 12 `fact_id`s shared across train/test. Root cause: the `_numeric_50k` variants file contained 702 duplicated `fact_id`s (50,000 rows, 49,298 unique), and the row-wise splitter could place a duplicated fact on both sides. Deduplicating by `fact_id` before splitting (`..._numeric_50k_dedup.jsonl`, 49,298 rows) restores a fact-disjoint split (29,023 train / 7,256 test) that passes the leakage check. The text-only hard top-1 on the corrected split (`0.7275`) is close to the earlier `0.6995` reported in the table above (which predates the dedup); the numeric-feature rows have not been re-run on the deduped split and should be regenerated for a strictly apples-to-apples comparison.
+**Leakage-fix note.** While rebuilding the split for these Track B ablations,
+`verify_no_leakage.py` flagged 12 `fact_id`s shared across train/test. Root cause:
+the `_numeric_50k` variants file contained 702 duplicated `fact_id`s (50,000 rows,
+49,298 unique), and the row-wise splitter could place a duplicated fact on both
+sides. Deduplicating by `fact_id` before splitting
+(`..._numeric_50k_dedup.jsonl`, 49,298 rows) restores a fact-disjoint split
+(29,023 train / 7,256 test) that passes the leakage check. The feature-mode table
+above and the numeric-consistency-loss table both use this corrected split; they
+are separate training sweeps, so compare arms within each table rather than mixing
+absolute values across the two sweeps.
 
 ## Reproduction
 

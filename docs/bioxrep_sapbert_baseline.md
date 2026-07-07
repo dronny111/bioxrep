@@ -70,12 +70,13 @@ MRR / top-1 / top-5 over `2,000` queries against the `44,997`-symbol pool.
 
 ## Statistical reporting
 
-The numbers above are single-run point estimates over `2,000` queries. For
-paper-grade reporting, add `--bootstrap` to any of the retrieval commands
-(`char_ngram_retrieval`, `sapbert_retrieval`, `student_retrieval`) to emit
-percentile bootstrap 95% CIs (`{top1,top5,mean_reciprocal_rank}_ci_{low,high}`),
-and re-run the learned student across several `--seed` values to report mean ± std,
-e.g.:
+The deterministic lexical/SapBERT/BioSyn/canonical rows are single-run point
+estimates over `2,000` queries; the headline held-out student row is already a
+5-seed mean ± std. For paper-grade confidence intervals, add `--bootstrap` to any
+of the retrieval commands (`char_ngram_retrieval`, `sapbert_retrieval`,
+`student_retrieval`) to emit percentile bootstrap 95% CIs
+(`{top1,top5,mean_reciprocal_rank}_ci_{low,high}`). To refresh the learned
+student seed sweep, run:
 
 ```bash
 for seed in 11 13 17 19 23; do
