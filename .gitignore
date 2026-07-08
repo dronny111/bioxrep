@@ -16,3 +16,8 @@ tokenizer/
 .hf_cache/
 .sapbert_emb_cache/
 .ipynb_checkpoints/
+
+# Local paper build/style artifacts; keep the tracked paper sources visible.
+/paper/*
+!/paper/main.tex
+!/paper/references.bib
