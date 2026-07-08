@@ -16,6 +16,7 @@
       --green: #2d8a56;
       --amber: #bd7b17;
       --red: #b74848;
+      --violet: #7a4fb5;
       --shadow: 0 18px 45px rgba(24, 36, 50, 0.12);
       color-scheme: light;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -136,7 +137,7 @@
 
     .metric-strip {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
       margin-top: 24px;
     }
@@ -569,6 +570,12 @@
     .bar.semantic { background: var(--blue); }
     .bar.lexical { background: var(--amber); }
     .bar.student { background: var(--red); }
+    .bar.student-attn { background: var(--violet); }
+    /* method-identity colors for the HGVS module (consistent across pools) */
+    .bar.m-text { background: var(--blue); }
+    .bar.m-xval { background: var(--cyan); }
+    .bar.m-explicit { background: var(--amber); }
+    .bar.m-sinus { background: var(--red); }
 
     .benchmark-card.ready .bar {
       width: var(--w);
@@ -832,6 +839,10 @@
               <span>Char-CNN held-out MRR</span>
             </div>
             <div class="mini-metric">
+              <strong>0.040</strong>
+              <span>Byte-Transformer held-out MRR</span>
+            </div>
+            <div class="mini-metric">
               <strong>0.9195</strong>
               <span>HGVS text-only hard top-1</span>
             </div>
@@ -1021,8 +1032,11 @@
             <h2 id="benchmarks-title">4. Benchmark Showdown</h2>
             <p>
               On the hard <code>alias_symbol</code> task, the structured oracle is
-              the ceiling, SapBERT is the strongest learned baseline, and the
-              small Char-CNN falls below the lexical floor.
+              the ceiling and pretrained SapBERT is the only learned method above
+              the lexical floor. Two from-scratch surface encoders &mdash; a
+              character CNN and a byte-level Transformer trained under an
+              identical regime &mdash; both fall <em>below</em> that floor,
+              isolating architecture as the control.
             </p>
           </div>
         </div>
@@ -1044,27 +1058,37 @@
               <strong>0.077</strong>
             </div>
             <div class="bar-row">
-              <div class="bar-label"><strong>Char-CNN Student</strong><span>research target</span></div>
+              <div class="bar-label"><strong>Char-CNN Student</strong><span>from-scratch convolution</span></div>
               <div class="bar-track"><div class="bar student" style="--w: 5.9%;"></div></div>
               <strong>0.059</strong>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label"><strong>Byte-Transformer Student</strong><span>from-scratch self-attention</span></div>
+              <div class="bar-track"><div class="bar student-attn" style="--w: 4.0%;"></div></div>
+              <strong>0.040</strong>
             </div>
           </article>
           <article class="benchmark-card">
             <h3>Reading the chart</h3>
             <p>
-              The student learned its training distribution, but short unseen
-              alias symbols often carry little semantic context and little
-              substring overlap with the approved symbol.
+              Both from-scratch students learned their training distribution, but
+              short unseen alias symbols carry little semantic context and little
+              substring overlap with the approved symbol. Swapping convolution for
+              self-attention does not close the gap &mdash; the byte-Transformer
+              lands even lower, so the limit is the from-scratch surface signal,
+              not the specific architecture.
             </p>
             <div class="takeaway">
-              Takeaway: pretrained biomedical semantics are currently the only
-              learned method above the lexical floor on this held-out notation.
+              Takeaway: pretrained biomedical semantics are the only learned
+              method above the lexical floor on this held-out notation; the
+              architecture control rules out a convolution-specific failure.
             </div>
             <div class="legend" aria-label="Benchmark legend">
               <span style="color: var(--green);">oracle ceiling</span>
               <span style="color: var(--blue);">semantic baseline</span>
               <span style="color: var(--amber);">lexical floor</span>
-              <span style="color: var(--red);">surface student</span>
+              <span style="color: var(--red);">char-CNN student</span>
+              <span style="color: var(--violet);">byte-Transformer student</span>
             </div>
           </article>
         </div>
@@ -1107,6 +1131,17 @@
               fill, because position features reject them easily.
             </p>
             <div class="hgvs-bars benchmark-card ready" id="hgvs-bars" aria-label="HGVS top-1 bar chart"></div>
+            <div class="legend" aria-label="HGVS method legend">
+              <span style="color: var(--blue);">text-only bytes</span>
+              <span style="color: var(--cyan);">xVal continuous</span>
+              <span style="color: var(--amber);">explicit scalar</span>
+              <span style="color: var(--red);">sinusoidal Fourier</span>
+            </div>
+            <p class="mode-note" style="margin-top:10px;">
+              Each method keeps one color across both pools &mdash; toggle the
+              views to watch text-only bytes rise from third place to the top as
+              the random-fill decoys are removed.
+            </p>
             <div class="takeaway" id="hgvs-takeaway">
               In the easy pool, xVal and explicit scalar inputs look strong, but
               the advantage is mostly easy-decoy rejection.
@@ -1155,10 +1190,10 @@
           ["decoy", "c.2048A>G", "random-fill decoy"]
         ],
         bars: [
-          ["xVal continuous", 0.8455, "semantic"],
-          ["Explicit scalar", 0.8345, "semantic"],
-          ["Text-only bytes", 0.6800, "ceiling"],
-          ["Sinusoidal Fourier", 0.4980, "student"]
+          ["xVal continuous", 0.8455, "m-xval"],
+          ["Explicit scalar", 0.8345, "m-explicit"],
+          ["Text-only bytes", 0.6800, "m-text"],
+          ["Sinusoidal Fourier", 0.4980, "m-sinus"]
         ]
       },
       hard: {
@@ -1172,10 +1207,10 @@
           ["decoy", "c.1799A>G", "same position, wrong base"]
         ],
         bars: [
-          ["Text-only bytes", 0.9195, "ceiling"],
-          ["xVal continuous", 0.9060, "semantic"],
-          ["Explicit scalar", 0.9000, "lexical"],
-          ["Sinusoidal Fourier", 0.4980, "student"]
+          ["Text-only bytes", 0.9195, "m-text"],
+          ["xVal continuous", 0.9060, "m-xval"],
+          ["Explicit scalar", 0.9000, "m-explicit"],
+          ["Sinusoidal Fourier", 0.4980, "m-sinus"]
         ]
       }
     };
