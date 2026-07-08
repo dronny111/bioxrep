@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BioXRep Visualization Demo</title>
+  <style>
+    :root {
+      --ink: #182432;
+      --muted: #5e6b79;
+      --line: #d7e2ec;
+      --panel: #ffffff;
+      --soft: #f4f8fb;
+      --blue: #2364aa;
+      --cyan: #1f9aa5;
+      --green: #2d8a56;
+      --amber: #bd7b17;
+      --red: #b74848;
+      --shadow: 0 18px 45px rgba(24, 36, 50, 0.12);
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #eef6fb 0, #f9fbfd 420px, #ffffff 100%);
+      line-height: 1.5;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    a {
+      color: var(--blue);
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 14px 0 30px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--blue), var(--cyan));
+      box-shadow: 0 10px 24px rgba(35, 100, 170, 0.26);
+    }
+
+    .topbar nav {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .topbar nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.94rem;
+      font-weight: 650;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(360px, 1.08fr);
+      gap: 28px;
+      align-items: center;
+      padding: 18px 0 34px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 14px;
+      padding: 6px 10px;
+      border: 1px solid rgba(31, 154, 165, 0.28);
+      border-radius: 999px;
+      color: #146874;
+      background: rgba(31, 154, 165, 0.08);
+      font-size: 0.84rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin-bottom: 18px;
+      font-size: clamp(2.35rem, 5vw, 4.9rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 640px;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .mini-metric {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .mini-metric strong {
+      display: block;
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .mini-metric span {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .module {
+      margin-top: 28px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .module-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    .module h2 {
+      margin-bottom: 8px;
+      font-size: clamp(1.55rem, 2.3vw, 2.3rem);
+      line-height: 1.12;
+    }
+
+    .module-head p {
+      max-width: 760px;
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .pill-button,
+    .segmented button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 9px 14px;
+      color: var(--ink);
+      background: #fff;
+      cursor: pointer;
+      font-weight: 750;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .pill-button:hover,
+    .segmented button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(35, 100, 170, 0.45);
+    }
+
+    .hero-graphic {
+      position: relative;
+      min-height: 520px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(35, 100, 170, 0.08), rgba(45, 138, 86, 0.08)),
+        repeating-linear-gradient(90deg, rgba(24, 36, 50, 0.04) 0, rgba(24, 36, 50, 0.04) 1px, transparent 1px, transparent 52px),
+        repeating-linear-gradient(0deg, rgba(24, 36, 50, 0.04) 0, rgba(24, 36, 50, 0.04) 1px, transparent 1px, transparent 52px);
+    }
+
+    .anchor-card {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      z-index: 4;
+      width: min(280px, 42vw);
+      padding: 24px;
+      border: 1px solid rgba(35, 100, 170, 0.26);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 18px 44px rgba(35, 100, 170, 0.18);
+      text-align: center;
+      transform: translate(-50%, -50%);
+    }
+
+    .anchor-card .label,
+    .chip .label,
+    .candidate .label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .anchor-card .symbol {
+      display: block;
+      margin: 8px 0 4px;
+      color: var(--blue);
+      font-size: 2.8rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+
+    .anchor-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .connection-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .connection-layer line {
+      stroke: rgba(35, 100, 170, 0.28);
+      stroke-width: 2;
+      stroke-dasharray: 8 8;
+      transition: opacity 220ms ease;
+    }
+
+    .chip {
+      position: absolute;
+      z-index: 3;
+      max-width: 230px;
+      padding: 13px 15px;
+      border: 1px solid rgba(24, 36, 50, 0.12);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 12px 28px rgba(24, 36, 50, 0.1);
+      transition: left 420ms ease, top 420ms ease, transform 420ms ease, border-color 160ms ease;
+    }
+
+    .chip strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 1rem;
+    }
+
+    .chip small {
+      color: var(--muted);
+    }
+
+    .chip[data-kind="symbol"] {
+      border-color: rgba(35, 100, 170, 0.28);
+    }
+
+    .chip[data-kind="alias"] {
+      border-color: rgba(31, 154, 165, 0.28);
+    }
+
+    .chip[data-kind="former"] {
+      border-color: rgba(189, 123, 23, 0.3);
+    }
+
+    .chip[data-kind="id"] {
+      border-color: rgba(45, 138, 86, 0.3);
+    }
+
+    .chip[data-kind="name"] {
+      border-color: rgba(183, 72, 72, 0.26);
+    }
+
+    .chip.c1 { left: 7%; top: 13%; }
+    .chip.c2 { left: 66%; top: 11%; }
+    .chip.c3 { left: 4%; top: 64%; }
+    .chip.c4 { left: 72%; top: 66%; }
+    .chip.c5 { left: 34%; top: 7%; }
+    .chip.c6 { left: 38%; top: 78%; }
+
+    .hero-graphic.collapsed .chip {
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(0.28);
+      opacity: 0.34;
+    }
+
+    .hero-graphic.collapsed .connection-layer line {
+      opacity: 0.12;
+    }
+
+    .split-grid,
+    .benchmark-grid,
+    .hgvs-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .scatter-panel,
+    .firewall-panel,
+    .benchmark-card,
+    .hgvs-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+    }
+
+    .scatter-panel {
+      min-height: 360px;
+      padding: 18px;
+    }
+
+    .scatter-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .scatter-title h3 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+
+    .score {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #fff;
+      font-size: 0.82rem;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .score.good {
+      color: var(--green);
+    }
+
+    .score.bad {
+      color: var(--red);
+    }
+
+    .scatter {
+      position: relative;
+      height: 260px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(24, 36, 50, 0.03) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(24, 36, 50, 0.03) 1px, transparent 1px),
+        #fff;
+      background-size: 40px 40px;
+    }
+
+    .point {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 1px rgba(24, 36, 50, 0.12), 0 8px 16px rgba(24, 36, 50, 0.12);
+    }
+
+    .point.teal { background: var(--cyan); }
+    .point.green { background: var(--green); }
+    .point.amber { background: var(--amber); }
+    .point.red { background: var(--red); }
+
+    .cluster-label {
+      position: absolute;
+      padding: 4px 7px;
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.82);
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .firewall-wrap {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+      gap: 14px;
+      align-items: stretch;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+    }
+
+    .universe {
+      min-height: 280px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .universe h3 {
+      margin-bottom: 10px;
+    }
+
+    .gene-card {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .gene-card strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .notation-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    code,
+    .tag {
+      border-radius: 6px;
+      padding: 3px 6px;
+      color: #233243;
+      background: #edf3f8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+    }
+
+    .firewall {
+      display: grid;
+      place-items: center;
+      min-height: 100%;
+    }
+
+    .wall {
+      display: grid;
+      place-items: center;
+      width: 58px;
+      min-height: 260px;
+      border: 2px solid rgba(183, 72, 72, 0.3);
+      border-radius: 8px;
+      color: var(--red);
+      background:
+        repeating-linear-gradient(45deg, rgba(183, 72, 72, 0.1) 0 8px, rgba(255, 255, 255, 0.7) 8px 16px);
+      font-weight: 900;
+      text-align: center;
+      writing-mode: vertical-rl;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .slider-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      margin-top: 16px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .slider-row input {
+      width: 100%;
+      accent-color: var(--red);
+    }
+
+    .callout {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--red);
+      border-radius: 8px;
+      background: #fff7f6;
+      color: #633032;
+    }
+
+    .benchmark-card {
+      padding: 18px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) 70px;
+      gap: 12px;
+      align-items: center;
+      margin: 14px 0;
+    }
+
+    .bar-label strong {
+      display: block;
+      line-height: 1.2;
+    }
+
+    .bar-label span {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .bar-track {
+      height: 18px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e2ebf2;
+    }
+
+    .bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+      transition: width 800ms ease;
+    }
+
+    .bar.ceiling { background: var(--green); }
+    .bar.semantic { background: var(--blue); }
+    .bar.lexical { background: var(--amber); }
+    .bar.student { background: var(--red); }
+
+    .benchmark-card.ready .bar {
+      width: var(--w);
+    }
+
+    .takeaway {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 8px;
+      background: #eef7f5;
+      color: #1f584f;
+      font-weight: 720;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 2px;
+      background: currentColor;
+    }
+
+    .segmented {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+    }
+
+    .segmented button {
+      border-color: transparent;
+      padding: 8px 12px;
+    }
+
+    .segmented button.active {
+      color: #fff;
+      background: var(--blue);
+    }
+
+    .hgvs-card {
+      padding: 18px;
+    }
+
+    .mutation {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .mutation-box {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .mutation-box strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 1.25rem;
+    }
+
+    .arrow {
+      color: var(--cyan);
+      font-size: 1.7rem;
+      font-weight: 900;
+    }
+
+    .candidate {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .candidate.correct {
+      border-color: rgba(45, 138, 86, 0.38);
+      background: #f2fbf5;
+    }
+
+    .candidate.decoy {
+      border-color: rgba(189, 123, 23, 0.28);
+    }
+
+    .rank-badge {
+      border-radius: 999px;
+      padding: 5px 8px;
+      color: #fff;
+      background: var(--green);
+      font-size: 0.78rem;
+      font-weight: 850;
+    }
+
+    .mode-note {
+      min-height: 74px;
+      margin: 12px 0 0;
+      color: var(--muted);
+    }
+
+    .hgvs-bars {
+      margin-top: 14px;
+    }
+
+    .footer {
+      margin-top: 34px;
+      padding: 24px 0 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 900px) {
+      .intro,
+      .split-grid,
+      .benchmark-grid,
+      .hgvs-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .module-head {
+        display: block;
+      }
+
+      .module-head .pill-button,
+      .module-head .segmented {
+        margin-top: 14px;
+      }
+
+      .hero-graphic {
+        min-height: 620px;
+      }
+
+      .chip {
+        max-width: 190px;
+      }
+
+      .chip.c1 { left: 5%; top: 8%; }
+      .chip.c2 { left: 52%; top: 8%; }
+      .chip.c3 { left: 5%; top: 72%; }
+      .chip.c4 { left: 55%; top: 72%; }
+      .chip.c5 { left: 31%; top: 22%; }
+      .chip.c6 { left: 25%; top: 84%; }
+
+      .firewall-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .firewall {
+        min-height: 54px;
+      }
+
+      .wall {
+        width: 100%;
+        min-height: 54px;
+        writing-mode: horizontal-tb;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .page {
+        width: min(100% - 20px, 1180px);
+        padding-top: 16px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .metric-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .module {
+        padding: 18px;
+      }
+
+      .anchor-card {
+        width: 230px;
+      }
+
+      .anchor-card .symbol {
+        font-size: 2.2rem;
+      }
+
+      .chip {
+        max-width: 155px;
+        padding: 10px;
+      }
+
+      .chip strong {
+        font-size: 0.88rem;
+      }
+
+      .bar-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .mutation {
+        grid-template-columns: 1fr;
+      }
+
+      .arrow {
+        transform: rotate(90deg);
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar" aria-label="BioXRep visualization navigation">
+      <div class="brand"><span class="mark">BX</span><span>BioXRep Demo</span></div>
+      <nav>
+        <a href="#names">Many Names</a>
+        <a href="#gap">Generalization Gap</a>
+        <a href="#firewall">Fact-Disjoint Split</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#hgvs">HGVS Numeric Half</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">Biomedical entity normalization</p>
+          <h1>Many surface strings, one invariant biological fact.</h1>
+          <p class="lead">
+            BioXRep asks whether a compact model can learn that aliases, former
+            names, database identifiers, descriptive text, and variant notations
+            are aligned views of the same underlying object. This demo turns the
+            paper's negative result into five inspectable visual modules.
+          </p>
+          <div class="metric-strip" aria-label="Headline BioXRep metrics">
+            <div class="mini-metric">
+              <strong>0.985</strong>
+              <span>in-domain validation top-1</span>
+            </div>
+            <div class="mini-metric">
+              <strong>0.059</strong>
+              <span>Char-CNN held-out MRR</span>
+            </div>
+            <div class="mini-metric">
+              <strong>0.9195</strong>
+              <span>HGVS text-only hard top-1</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="names" class="hero-graphic" aria-label="Many names collapse into one canonical fact">
+          <svg class="connection-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="19" y1="22" x2="50" y2="50"></line>
+            <line x1="78" y1="21" x2="50" y2="50"></line>
+            <line x1="16" y1="74" x2="50" y2="50"></line>
+            <line x1="83" y1="77" x2="50" y2="50"></line>
+            <line x1="45" y1="14" x2="50" y2="50"></line>
+            <line x1="48" y1="86" x2="50" y2="50"></line>
+          </svg>
+          <div class="anchor-card">
+            <span class="label">Canonical anchor</span>
+            <span class="symbol">BRCA1</span>
+            <p>HGNC approved gene symbol as the shared fact target.</p>
+          </div>
+          <div class="chip c1" data-kind="symbol">
+            <span class="label">Approved symbol</span>
+            <strong>BRCA1</strong>
+            <small>canonical surface form</small>
+          </div>
+          <div class="chip c2" data-kind="alias">
+            <span class="label">Alias symbol</span>
+            <strong>RNF53</strong>
+            <small>alternate short string</small>
+          </div>
+          <div class="chip c3" data-kind="former">
+            <span class="label">Former official symbol</span>
+            <strong>BRCC1</strong>
+            <small>historical naming</small>
+          </div>
+          <div class="chip c4" data-kind="id">
+            <span class="label">Opaque database ID</span>
+            <strong>Entrez:672</strong>
+            <small>identifier without spelling cues</small>
+          </div>
+          <div class="chip c5" data-kind="name">
+            <span class="label">Free-text name</span>
+            <strong>breast cancer 1, early onset</strong>
+            <small>descriptive synonym</small>
+          </div>
+          <div class="chip c6" data-kind="alias">
+            <span class="label">Alias symbol</span>
+            <strong>FANCS</strong>
+            <small>another aligned view</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="module" aria-labelledby="names-title">
+        <div class="module-head">
+          <div>
+            <h2 id="names-title">1. Many Names, One Fact</h2>
+            <p>
+              The core representation problem is not memorizing a spelling; it is
+              collapsing equivalent notations onto one biological fact.
+            </p>
+          </div>
+          <button class="pill-button" id="collapse-names" type="button">Collapse views</button>
+        </div>
+      </section>
+
+      <section id="gap" class="module" aria-labelledby="gap-title">
+        <div class="module-head">
+          <div>
+            <h2 id="gap-title">2. The Generalization Gap</h2>
+            <p>
+              In-distribution validation can look solved while fact- and
+              notation-disjoint retrieval remains hard. The Char-CNN fits seen
+              pairs, then fails to cluster unseen <code>alias_symbol</code> forms
+              around the right facts.
+            </p>
+          </div>
+        </div>
+        <div class="split-grid">
+          <article class="scatter-panel">
+            <div class="scatter-title">
+              <h3>In-distribution recall</h3>
+              <span class="score good">0.985 top-1</span>
+            </div>
+            <div class="scatter" aria-label="Tight in-distribution clusters">
+              <span class="cluster-label" style="left: 17%; top: 18%;">Gene A</span>
+              <span class="cluster-label" style="left: 56%; top: 56%;">Gene B</span>
+              <span class="point" style="left: 20%; top: 31%;"></span>
+              <span class="point teal" style="left: 24%; top: 34%;"></span>
+              <span class="point green" style="left: 19%; top: 38%;"></span>
+              <span class="point amber" style="left: 27%; top: 28%;"></span>
+              <span class="point" style="left: 61%; top: 65%;"></span>
+              <span class="point teal" style="left: 66%; top: 62%;"></span>
+              <span class="point green" style="left: 59%; top: 58%;"></span>
+              <span class="point amber" style="left: 64%; top: 69%;"></span>
+            </div>
+          </article>
+          <article class="scatter-panel">
+            <div class="scatter-title">
+              <h3>Fact-disjoint held-out notation</h3>
+              <span class="score bad">0.059 MRR</span>
+            </div>
+            <div class="scatter" aria-label="Scattered fact-disjoint points">
+              <span class="cluster-label" style="left: 8%; top: 12%;">held-out <code>alias_symbol</code></span>
+              <span class="point red" style="left: 12%; top: 70%;"></span>
+              <span class="point teal" style="left: 31%; top: 22%;"></span>
+              <span class="point amber" style="left: 74%; top: 31%;"></span>
+              <span class="point green" style="left: 45%; top: 77%;"></span>
+              <span class="point red" style="left: 63%; top: 18%;"></span>
+              <span class="point teal" style="left: 83%; top: 69%;"></span>
+              <span class="point amber" style="left: 24%; top: 52%;"></span>
+              <span class="point green" style="left: 55%; top: 48%;"></span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="firewall" class="module" aria-labelledby="firewall-title">
+        <div class="module-head">
+          <div>
+            <h2 id="firewall-title">3. Fact-Disjoint Evaluation Firewall</h2>
+            <p>
+              The split prevents the model from seeing the test gene in any
+              notation. The held-out query style is also absent, so success must
+              come from genuine transfer rather than same-form recall.
+            </p>
+          </div>
+        </div>
+        <div class="firewall-wrap">
+          <article class="universe">
+            <h3>Training Universe</h3>
+            <div class="gene-card">
+              <strong>Gene A</strong>
+              <div class="notation-row">
+                <span class="tag">approved_symbol</span>
+                <span class="tag">prev_symbol</span>
+                <span class="tag">alias_name</span>
+              </div>
+            </div>
+            <div class="gene-card">
+              <strong>Gene B</strong>
+              <div class="notation-row">
+                <span class="tag">approved_name</span>
+                <span class="tag">prev_name</span>
+                <span class="tag">approved_symbol</span>
+              </div>
+            </div>
+          </article>
+          <div class="firewall" aria-hidden="true">
+            <div class="wall">Firewall</div>
+          </div>
+          <article class="universe">
+            <h3>Testing Universe</h3>
+            <div class="gene-card">
+              <strong>Gene C</strong>
+              <div class="notation-row">
+                <span class="tag">held-out fact_id</span>
+                <span class="tag">alias_symbol query</span>
+                <span class="tag">approved_symbol target</span>
+              </div>
+            </div>
+            <div class="gene-card">
+              <strong>Retrieval challenge</strong>
+              <div class="notation-row">
+                <span class="tag">2,000 queries</span>
+                <span class="tag">44,997 candidates</span>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div class="slider-row">
+          <label for="firewall-slider">
+            <strong>Firewall strictness</strong><br>
+            <span id="firewall-text">No test facts and no held-out notation leak into training.</span>
+          </label>
+          <input id="firewall-slider" type="range" min="0" max="2" step="1" value="2" aria-label="Firewall strictness">
+        </div>
+        <div class="callout">
+          <strong>Fail loudly:</strong> <code>scripts/verify_no_leakage.py</code>
+          asserts fact- and held-out-notation disjointness whenever the split is rebuilt.
+        </div>
+      </section>
+
+      <section id="benchmarks" class="module" aria-labelledby="benchmarks-title">
+        <div class="module-head">
+          <div>
+            <h2 id="benchmarks-title">4. Benchmark Showdown</h2>
+            <p>
+              On the hard <code>alias_symbol</code> task, the structured oracle is
+              the ceiling, SapBERT is the strongest learned baseline, and the
+              small Char-CNN falls below the lexical floor.
+            </p>
+          </div>
+        </div>
+        <div class="benchmark-grid">
+          <article class="benchmark-card ready" aria-label="MRR benchmark bar chart">
+            <div class="bar-row">
+              <div class="bar-label"><strong>Canonical Teacher</strong><span>structured ceiling</span></div>
+              <div class="bar-track"><div class="bar ceiling" style="--w: 100%;"></div></div>
+              <strong>1.000</strong>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label"><strong>SapBERT Dense</strong><span>pretrained semantics</span></div>
+              <div class="bar-track"><div class="bar semantic" style="--w: 13.4%;"></div></div>
+              <strong>0.134</strong>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label"><strong>Character n-gram</strong><span>lexical floor</span></div>
+              <div class="bar-track"><div class="bar lexical" style="--w: 7.7%;"></div></div>
+              <strong>0.077</strong>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label"><strong>Char-CNN Student</strong><span>research target</span></div>
+              <div class="bar-track"><div class="bar student" style="--w: 5.9%;"></div></div>
+              <strong>0.059</strong>
+            </div>
+          </article>
+          <article class="benchmark-card">
+            <h3>Reading the chart</h3>
+            <p>
+              The student learned its training distribution, but short unseen
+              alias symbols often carry little semantic context and little
+              substring overlap with the approved symbol.
+            </p>
+            <div class="takeaway">
+              Takeaway: pretrained biomedical semantics are currently the only
+              learned method above the lexical floor on this held-out notation.
+            </div>
+            <div class="legend" aria-label="Benchmark legend">
+              <span style="color: var(--green);">oracle ceiling</span>
+              <span style="color: var(--blue);">semantic baseline</span>
+              <span style="color: var(--amber);">lexical floor</span>
+              <span style="color: var(--red);">surface student</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="hgvs" class="module" aria-labelledby="hgvs-title">
+        <div class="module-head">
+          <div>
+            <h2 id="hgvs-title">5. HGVS Numeric Half</h2>
+            <p>
+              Protein and nucleotide HGVS notations add numeric structure. The
+              hard setting removes easy random-fill decoys, forcing the encoder
+              to map the amino-acid change to the correct codon change.
+            </p>
+          </div>
+          <div class="segmented" role="group" aria-label="HGVS pool mode">
+            <button type="button" data-mode="easy" class="active">Easy pool</button>
+            <button type="button" data-mode="hard">Matched-only</button>
+          </div>
+        </div>
+        <div class="hgvs-grid">
+          <article class="hgvs-card">
+            <div class="mutation">
+              <div class="mutation-box">
+                <span class="label">Protein HGVS query</span>
+                <strong>p.Val600Glu</strong>
+              </div>
+              <div class="arrow" aria-hidden="true">&rarr;</div>
+              <div class="mutation-box">
+                <span class="label">Nucleotide HGVS target</span>
+                <strong>c.1799T&gt;A</strong>
+              </div>
+            </div>
+            <div id="candidate-list" aria-live="polite"></div>
+          </article>
+          <article class="hgvs-card">
+            <h3 id="hgvs-mode-title">Full 20-candidate pool</h3>
+            <p class="mode-note" id="hgvs-mode-note">
+              Numeric-aware encodings look helpful when most decoys are random
+              fill, because position features reject them easily.
+            </p>
+            <div class="hgvs-bars benchmark-card ready" id="hgvs-bars" aria-label="HGVS top-1 bar chart"></div>
+            <div class="takeaway" id="hgvs-takeaway">
+              In the easy pool, xVal and explicit scalar inputs look strong, but
+              the advantage is mostly easy-decoy rejection.
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Metrics mirror the BioXRep README, paper draft, and frozen HGVS result notes.
+      This page is intentionally static so it can be opened directly from disk.
+    </footer>
+  </div>
+
+  <script>
+    const hero = document.querySelector(".hero-graphic");
+    const collapseButton = document.querySelector("#collapse-names");
+    collapseButton.addEventListener("click", () => {
+      hero.classList.toggle("collapsed");
+      collapseButton.textContent = hero.classList.contains("collapsed")
+        ? "Expand views"
+        : "Collapse views";
+    });
+
+    const firewallText = document.querySelector("#firewall-text");
+    const firewallSlider = document.querySelector("#firewall-slider");
+    const firewallMessages = [
+      "Weak split: same fact can appear on both sides, so recall can masquerade as generalization.",
+      "Fact-disjoint: test genes are excluded from training, but notation exposure still matters.",
+      "Paper-grade: no test facts and no held-out notation leak into training."
+    ];
+    firewallSlider.addEventListener("input", () => {
+      firewallText.textContent = firewallMessages[Number(firewallSlider.value)];
+    });
+
+    const hgvsData = {
+      easy: {
+        title: "Full 20-candidate pool",
+        note: "Numeric-aware encodings look helpful when most decoys are random fill, because position features reject them easily.",
+        takeaway: "In the easy pool, xVal and explicit scalar inputs look strong, but the advantage is mostly easy-decoy rejection.",
+        candidates: [
+          ["correct", "c.1799T>A", "correct codon change"],
+          ["decoy", "c.1799T>C", "same position, wrong base"],
+          ["decoy", "c.1523G>A", "random-fill decoy"],
+          ["decoy", "c.2048A>G", "random-fill decoy"]
+        ],
+        bars: [
+          ["xVal continuous", 0.8455, "semantic"],
+          ["Explicit scalar", 0.8345, "semantic"],
+          ["Text-only bytes", 0.6800, "ceiling"],
+          ["Sinusoidal Fourier", 0.4980, "student"]
+        ]
+      },
+      hard: {
+        title: "Matched-only hard pool",
+        note: "Random-fill decoys are removed. Position is now shared by the positive and hard decoys, so the model must use the mutation text.",
+        takeaway: "On matched-only hard retrieval, the text-only byte encoder is strongest at 0.9195 top-1.",
+        candidates: [
+          ["correct", "c.1799T>A", "correct codon change"],
+          ["decoy", "c.1799T>C", "same position, wrong base"],
+          ["decoy", "c.1799G>A", "same position, wrong base"],
+          ["decoy", "c.1799A>G", "same position, wrong base"]
+        ],
+        bars: [
+          ["Text-only bytes", 0.9195, "ceiling"],
+          ["xVal continuous", 0.9060, "semantic"],
+          ["Explicit scalar", 0.9000, "lexical"],
+          ["Sinusoidal Fourier", 0.4980, "student"]
+        ]
+      }
+    };
+
+    const candidateList = document.querySelector("#candidate-list");
+    const hgvsBars = document.querySelector("#hgvs-bars");
+    const modeTitle = document.querySelector("#hgvs-mode-title");
+    const modeNote = document.querySelector("#hgvs-mode-note");
+    const hgvsTakeaway = document.querySelector("#hgvs-takeaway");
+    const modeButtons = document.querySelectorAll("[data-mode]");
+
+    function renderHgvs(mode) {
+      const data = hgvsData[mode];
+      modeTitle.textContent = data.title;
+      modeNote.textContent = data.note;
+      hgvsTakeaway.textContent = data.takeaway;
+      candidateList.innerHTML = data.candidates.map(([kind, value, label]) => `
+        <div class="candidate ${kind}">
+          <div>
+            <span class="label">${kind === "correct" ? "Target" : "Position-matched candidate"}</span>
+            <strong>${value}</strong>
+            <div>${label}</div>
+          </div>
+          <span class="rank-badge">${kind === "correct" ? "match" : "decoy"}</span>
+        </div>
+      `).join("");
+      hgvsBars.innerHTML = data.bars.map(([label, value, cls]) => `
+        <div class="bar-row">
+          <div class="bar-label"><strong>${label}</strong><span>hard top-1</span></div>
+          <div class="bar-track"><div class="bar ${cls}" style="--w: ${(value * 100).toFixed(2)}%;"></div></div>
+          <strong>${value.toFixed(4)}</strong>
+        </div>
+      `).join("");
+      requestAnimationFrame(() => hgvsBars.classList.add("ready"));
+    }
+
+    modeButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        modeButtons.forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        hgvsBars.classList.remove("ready");
+        renderHgvs(button.dataset.mode);
+      });
+    });
+
+    renderHgvs("easy");
+  </script>
+</body>
+</html>

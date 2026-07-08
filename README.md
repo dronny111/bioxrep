@@ -15,7 +15,8 @@ This repository is currently a **benchmark-and-baselines** contribution, not yet
 validated method result. Read the claims with that scope:
 
 - **Delivered:** fact-disjoint (and notation-disjoint) retrieval benchmarks for
-  HGNC gene aliases and ClinVar HGVS variants; a comparable baseline suite
+  HGNC gene aliases, plus a parallel pilot benchmark for ClinVar HGVS variants;
+  a comparable baseline suite
   (char n-gram lexical floor, SapBERT dense, BioSyn-style hybrid, canonical-teacher
   oracle ceiling); and a lightweight contrastive char-CNN student with a
   supervised-contrastive + optional attribute/numeric-consistency objective.
@@ -58,15 +59,19 @@ and it is where several intuitively-strong models are shown to fail.
 
 ### 1. HGNC gene-alias normalization (fact- and notation-disjoint)
 
-Held-out `alias_symbol` queries retrieved against the approved-symbol pool
-(~45k candidates). The `alias_symbol` notation is held out for validation.
+Held-out `alias_symbol` queries are retrieved against the full approved-symbol
+candidate pool (`44,997` symbols). The target approved symbols for the held-out
+queries are present in this evaluation pool; the disjointness is in the training
+facts and in the query notation, not in the candidate inventory.
 
-| Method | MRR |
-| --- | ---: |
-| Canonical teacher (exact structured match) | **1.000**|
-| SapBERT dense | **0.134** |
-| Character n-gram (TF–IDF cosine) | **0.077** |
-| Contrastive char-CNN student | **0.059 ± 0.001** |
+| Method | top-1 | top-5 | MRR |
+| --- | ---: | ---: | ---: |
+| Canonical teacher (exact structured match) | **1.000** | **1.000** | **1.000** |
+| SapBERT dense | **0.080** | **0.190** | **0.134** |
+| BioSyn hybrid (λ=0.7) | **0.077** | **0.182** | **0.129** |
+| Character n-gram (TF-IDF cosine) | **0.047** | **0.108** | **0.077** |
+| Contrastive char-CNN student | **0.041 ± 0.002** | **0.075 ± 0.001** | **0.059 ± 0.001** |
+| Byte-Transformer student | **0.024 ± 0.002** | **0.055 ± 0.003** | **0.040 ± 0.001** |
 
 **The lightweight contrastive student.** A byte-level char-CNN
 (~100k params) trained with supervised contrastive loss over 22,364 HGNC
@@ -74,17 +79,33 @@ equivalence classes reaches **0.985 in-domain validation top-1** and
 **0.059 ± 0.001 MRR** on the held-out `alias_symbol` notation, *below* both the
 SapBERT dense retriever (0.134) and the char n-gram lexical floor (0.077).
 Adding byte-rule or frozen neural attention distillation changes held-out MRR by
-only about 0.001, within seed variance.
+only about 0.001, within seed variance. Those attention-distillation ablations
+use a separate three-arm run and therefore report a slightly different
+contrastive-only baseline (`0.055 ± 0.002` MRR); the headline char-CNN row above
+is the main 5-seed HGNC student sweep.
+
+**Architecture control.** A byte-level Transformer with the same byte
+tokenization, contrastive objective, and 5-seed protocol scores lower than the
+char-CNN (`0.040 ± 0.001` vs. `0.059 ± 0.001` MRR). This is plausible because
+the CNN has a useful local n-gram inductive bias for short character strings,
+while a shallow Transformer trained from scratch over raw bytes must learn that
+local syntax from the same limited signal. The result suggests the bottleneck is
+semantic pretraining or teacher signal, not merely the sequence mixer.
 
 Off-the-shelf methods trade places by notation: SapBERT dense wins most on the
 low-surface-overlap `alias_name` notation (0.316 vs. char n-gram 0.042), while
 the BioSyn-style sparse+dense hybrid is strongest on the high-overlap
 `prev_symbol` notation (0.250).
 
-### 2. HGVS variant-notation alignment (protein ↔ nucleotide, position-confounded hard pool)
+### 2. Parallel HGVS numeric pilot (appendix-style)
 
-Aligning protein HGVS to nucleotide HGVS on a fact-disjoint split, scored against
-position-confounded candidate pools. The current paper-grade analysis reports both
+The HGVS protein-to-nucleotide experiment is a parallel pilot rather than part of
+the core HGNC gene-symbol claim. It is kept here for reproducibility and is best
+treated as appendix material unless the paper is expanded into a full dual-task
+layout with its own task/data section and main results table.
+
+The pilot aligns protein HGVS to nucleotide HGVS on a fact-disjoint split, scored
+against position-confounded candidate pools. The current analysis reports both
 the full 20-candidate pool (about 2.25 position-matched decoys plus 16.75 random
 fill decoys per query) and a stricter matched-only pool that drops the easy random
 fill. The decisive number is matched-only hard top-1:
@@ -106,9 +127,12 @@ change to the correct codon change, so the result is as much learned genetic-cod
 structure as generic notation invariance. Full ablation logs and interpretation
 are in [`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md).
 
-The recurring lesson across both benchmarks: **evaluation design decides the
-conclusion.** Fact-disjoint splits and position-confounded hard pools expose gaps
-that in-distribution validation hides.
+The recurring lesson across the main benchmark and the HGVS pilot:
+**evaluation design decides the conclusion.** Fact-disjoint splits and
+position-confounded hard pools expose gaps that in-distribution validation hides.
+
+For a visual walkthrough of the benchmark design and negative result, open the
+standalone demo page at [`docs/bioxrep_visualization_demo.html`](docs/bioxrep_visualization_demo.html).
 
 ---
 
@@ -214,13 +238,15 @@ whenever you rebuild a split — it fails loudly on fact or held-out-notation le
 
 Artifact sizes: `44,997` gene-alias classes → `387,123` flattened forms;
 the `alias_symbol` holdout writes `342,405` train and `44,718` test rows.
+In retrieval commands, `--candidate-split train` names the approved-symbol
+inventory used as candidates; the student training classes still exclude the
+held-out `alias_symbol` test facts verified above.
 
-### HGVS protein↔nucleotide alignment
+### Parallel HGVS protein↔nucleotide pilot
 
-The full HGVS pipeline — building ClinVar HGVS classes, fact-disjoint
+The appendix-style HGVS pipeline builds ClinVar HGVS classes, fact-disjoint
 position holdouts, strict position-matched hard candidate pools, and the scaled
-text-only / numeric-feature ablation matrix. Headline
-reproduction:
+text-only / numeric-feature ablation matrix. Headline reproduction:
 
 ```bash
 # Scaled fact-disjoint split -> pairs -> strict hard pool -> text-only CNN.
