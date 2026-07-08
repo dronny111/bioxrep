@@ -102,14 +102,14 @@ scripts/            reproducible experiment drivers and leakage checks
 docs/               frozen results, review notes, roadmap, visual demo
 tests/              unit tests for metrics, encoders, and attention distillation
 ```
-
+<!-- 
 ## More Detail
 
 - HGNC baseline writeup: [`docs/bioxrep_sapbert_baseline.md`](docs/bioxrep_sapbert_baseline.md)
 - HGVS numeric pilot: [`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md)
 - Work-so-far review: [`docs/bioxrep_review_and_gaps.md`](docs/bioxrep_review_and_gaps.md)
 - Research roadmap: [`docs/bioxrep_experiment_roadmap.md`](docs/bioxrep_experiment_roadmap.md)
-- Visual demo: [`docs/bioxrep_visualization_demo.html`](docs/bioxrep_visualization_demo.html)
+- Visual demo: [`docs/bioxrep_visualization_demo.html`](docs/bioxrep_visualization_demo.html) -->
 
 ## Reproducibility Notes
 
