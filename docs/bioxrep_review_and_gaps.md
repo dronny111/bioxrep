@@ -131,7 +131,7 @@ Full numbers in `docs/bioxrep_hgvs_results.md`; eval JSONs
 contrastive objective, byte tokenization, and 5-seed protocol as the char-CNN, so
 the only variable is convolution → self-attention. It scores held-out
 `alias_symbol` MRR **0.040 ± 0.001** vs the char-CNN's **0.059 ± 0.001** (>10 seed
-std lower) and lower in-domain valid top-1 (0.449 ± 0.009 vs 0.598 ± 0.004) — i.e.
+std lower) and lower in-domain valid top-1 (0.449 ± 0.010 vs 0.598 ± 0.005) — i.e.
 attention is no better (here slightly worse at matched budget) than convolution at
 inducing notation invariance from the contrastive signal alone; both stay far below
 the lexical floor. This isolates the architecture axis and shows the binding
