@@ -217,11 +217,12 @@ in-distribution (train-seen) and are marked accordingly.
 \toprule
 \textbf{Notation} & \textbf{Method} & \textbf{top-1} & \textbf{top-5} & \textbf{MRR} \\
 \midrule
-\multirow{5}{*}{\shortstack[l]{\texttt{alias\_}\\\texttt{symbol}\\(held-out)}}
+\multirow{6}{*}{\shortstack[l]{\texttt{alias\_}\\\texttt{symbol}\\(held-out)}}
  & Char $n$-gram        & 0.047 & 0.108 & 0.077 \\
  & SapBERT dense        & 0.080 & 0.190 & \textbf{0.134} \\
  & BioSyn hybrid        & 0.077 & 0.182 & 0.129 \\
  & Char-CNN student$^{\ddagger}$ & 0.041 & 0.075 & 0.059 \\
+ & Byte-Transformer student$^{\ddagger}$ & 0.024 & 0.055 & 0.040 \\
  & Canonical teacher    & 1.000 & 1.000 & 1.000 \\
 \midrule
 \multirow{5}{*}{\texttt{prev\_symbol}}
@@ -244,10 +245,13 @@ pool ($2{,}000$ queries per notation). $^{\dagger}$train-seen: the student saw t
 query notation during training, so these are in-distribution measurements, not
 held-out generalization. Best learned MRR per notation in \textbf{bold}; the
 canonical teacher is a structured oracle upper bound.
-$^{\ddagger}$the held-out \texttt{alias\_symbol} student row is the mean over $5$
-seeds ($\{13,17,23,42,101\}$; per-seed std $\le 0.002$ on every metric); the
-deterministic lexical, SapBERT, and BioSyn methods are seed-invariant, and the
-train-seen ($^{\dagger}$) student rows are single-seed.}
+$^{\ddagger}$the held-out \texttt{alias\_symbol} student rows (char-CNN and
+byte-Transformer) are the mean over $5$ seeds ($\{13,17,23,42,101\}$; per-seed std
+$\le 0.004$ on every metric); the deterministic lexical, SapBERT, and BioSyn
+methods are seed-invariant, and the train-seen ($^{\dagger}$) student rows are
+single-seed. The byte-Transformer is trained from scratch under the identical
+contrastive regime and byte tokenization as the char-CNN, changing only the
+sequence-mixing architecture (convolution~$\rightarrow$~self-attention).}
 \label{tab:results}
 \end{table}
 
@@ -289,6 +293,22 @@ approved symbols) but collapses to the lexical floor on free-text
 \texttt{alias\_name} (MRR $0.042$), where it has no semantic capacity. The negative
 result is therefore not an artifact of the held-out notation alone; the capacity of
 a surface-only encoder is the deeper limit.
+
+The negative is also not an artifact of the convolutional inductive bias. Replacing
+the char-CNN's convolutional trunk with a $2$-layer, $4$-head byte-level
+Transformer encoder---trained from scratch under the identical contrastive
+objective and byte tokenization, so that only the sequence-mixing operator
+changes---does not recover the task. The byte-Transformer scores $0.040 \pm 0.001$
+MRR on held-out \texttt{alias\_symbol} (mean $\pm$ std over the same $5$ seeds),
+\emph{below} the char-CNN ($0.059 \pm 0.001$) by more than ten seed standard
+deviations, and its in-domain validation top-1 is likewise lower ($0.449 \pm 0.010$
+vs.\ $0.598 \pm 0.005$). Self-attention over raw bytes is thus no better---and here
+slightly worse at matched budget---than convolution at inducing notation-invariant
+structure from the contrastive signal alone; both remain far below the lexical
+floor. The limitation is the absence of a pretrained semantic signal, not the
+choice of surface encoder, which is precisely why the semantically pretrained
+SapBERT is the only method that clears the $n$-gram baseline on the held-out
+notation.
 
 \subsection{Does attention distillation help?}
 \label{sec:ablation}

@@ -126,7 +126,23 @@ text-only **0.9195** [0.908, 0.930] > `xval` 0.906 > `explicit` 0.900, and
 do not help discriminate position-confounded hard negatives — holds across xVal.
 Full numbers in `docs/bioxrep_hgvs_results.md`; eval JSONs
 `outputs/trackb_featmode/eval/hard_feat_*.json` and `strict_matched_only.json`.
-Still missing from the brief: a subword-transformer encoder baseline.
+**Transformer encoder baseline — DONE.** Added a byte-level Transformer encoder
+(2 layers, 4 heads, ~133k params) trained from scratch under the identical
+contrastive objective, byte tokenization, and 5-seed protocol as the char-CNN, so
+the only variable is convolution → self-attention. It scores held-out
+`alias_symbol` MRR **0.040 ± 0.001** vs the char-CNN's **0.059 ± 0.001** (>10 seed
+std lower) and lower in-domain valid top-1 (0.449 ± 0.010 vs 0.598 ± 0.005) — i.e.
+attention is no better (here slightly worse at matched budget) than convolution at
+inducing notation invariance from the contrastive signal alone; both stay far below
+the lexical floor. This isolates the architecture axis and shows the binding
+constraint is the absence of a pretrained semantic signal, not the surface-encoder
+choice. Note this is a *byte-level* Transformer by design (same tokenization as the
+char models, isolating a single axis); a *pretrained subword* Transformer is already
+represented by the SapBERT dense baseline, so the only unrealized brief item is a
+from-scratch BPE/subword tokenizer, an intentional scope decision (it would confound
+tokenization with architecture). Encoder in `bioxrep/models/char_encoder.py`
+(`CharTransformerEncoder`), sweep `scripts/run_multiseed_hgnc_transformer.sh`,
+aggregate `outputs/multiseed_hgnc_transformer/aggregate_hgnc_transformer_multiseed.json`.
 
 ### 8. Tests / CI are minimal
 A lightweight `pytest` suite and GitHub Actions workflow now cover retrieval

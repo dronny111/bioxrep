@@ -10,7 +10,7 @@ import torch
 
 from bioxrep.data.io import read_jsonl
 from bioxrep.eval.retrieval import bootstrap_ci
-from bioxrep.models.char_encoder import CharCNNEncoder, CharMeanEncoder
+from bioxrep.models.char_encoder import CharCNNEncoder, CharMeanEncoder, CharTransformerEncoder
 from bioxrep.train.train_contrastive_student import (
     ContrastiveStudent,
     NumericFeatureEncoder,
@@ -49,6 +49,15 @@ def build_encoder(args: Mapping[str, Any]) -> torch.nn.Module:
             hidden_dim=args["hidden_dim"],
             projection_dim=args["projection_dim"],
             kernel_sizes=kernel_sizes,
+            dropout=args.get("dropout", 0.1),
+        )
+    if args["encoder"] == "transformer":
+        return CharTransformerEncoder(
+            hidden_dim=args["hidden_dim"],
+            projection_dim=args["projection_dim"],
+            num_layers=args.get("transformer_layers", 2),
+            num_heads=args.get("transformer_heads", 4),
+            max_length=args.get("max_length", 512),
             dropout=args.get("dropout", 0.1),
         )
     raise ValueError(f"Unknown encoder: {args['encoder']}")
