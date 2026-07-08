@@ -1,171 +1,74 @@
-# BioXRep: Cross-Notation Distillation for Invariant Biological Representation Learning
+# BioXRep
 
-**BioXRep** learns biomedical representations that recover the underlying
-biological *fact* rather than the surface *notation* used to express it. The
-same gene, variant, or measurement appears as a symbol, an alias, an HGVS
-string, an opaque identifier, a lab value with units, or free text. BioXRep asks
-whether alignment and distillation signals across these parallel notations can
-teach a model to collapse them onto a shared, notation-invariant representation
+Cross-notation biomedical entity normalization benchmarks and baselines.
 
----
+BioXRep asks whether a model can recover the underlying biological **fact** when
+the same object appears as different surface notations: gene symbols, aliases,
+former names, HGVS strings, opaque IDs, and free-text descriptions.
 
-## Project status (what is and isn't delivered)
+This repository is currently a **benchmark-and-baselines** contribution, not a
+positive method result. The main finding is negative: lightweight surface-form
+students fit in-distribution pairs but do not generalize to a fact- and
+notation-disjoint HGNC alias task.
 
-This repository is currently a **benchmark-and-baselines** contribution, not yet a
-validated method result. Read the claims with that scope:
+## Highlights
 
-- **Delivered:** fact-disjoint (and notation-disjoint) retrieval benchmarks for
-  HGNC gene aliases, plus a parallel pilot benchmark for ClinVar HGVS variants;
-  a comparable baseline suite
-  (char n-gram lexical floor, SapBERT dense, BioSyn-style hybrid, canonical-teacher
-  oracle ceiling); and a lightweight contrastive char-CNN student with a
-  supervised-contrastive + optional attribute/numeric-consistency objective.
-  The trainer also includes optional attention-map distillation
-  (`--attention-distillation-weight`) from either a deterministic byte/digit
-  alignment teacher or a frozen neural char-CNN teacher
-  (`--attention-teacher-checkpoint`).
-- **Not yet delivered:** a trained neural seq2seq notation-translator teacher,
-  distillation from a semantically pretrained teacher, or a positive method result
-  from the attention-distillation objective. The implemented byte-rule and frozen
-  neural surface-form teachers have both been tested and do **not** close the
-  held-out-notation gap.
-- **Headline method result is negative.** On the protagonist fact- and
-  notation-disjoint task (`alias_symbol`), the trained student loses to SapBERT and
-  to the lexical floor. The repository therefore does **not** yet contain positive
-  evidence for its core hypothesis that cross-notation training beats a general
-  token encoder; it establishes the benchmarks and shows where the intuitive small
-  model fails. See [`docs/bioxrep_sapbert_baseline.md`](docs/bioxrep_sapbert_baseline.md).
+- Fact- and notation-disjoint HGNC gene-alias retrieval benchmark.
+- Parallel ClinVar HGVS protein-to-nucleotide numeric pilot.
+- Baselines: character n-gram, SapBERT dense, BioSyn-style hybrid, canonical
+  teacher oracle, char-CNN student, and byte-Transformer student.
+- Leakage checks via [`scripts/verify_no_leakage.py`](scripts/verify_no_leakage.py).
+- Standalone visual explainer:
+  [`docs/bioxrep_visualization_demo.html`](docs/bioxrep_visualization_demo.html).
 
----
+## Key Results
 
-## Research thesis
+### HGNC `alias_symbol` Held-Out Retrieval
 
-Biological information is expressed through many equivalent notation systems:
-DNA/RNA/protein sequences, HGVS variant notation, gene aliases and prior symbols,
-database identifiers, clinical laboratory values, units, and free-text
-interpretations. BioXRep studies whether **cross-notation distillation** — using a
-canonical teacher or structured field as the invariant target — can produce
-encoders that represent the underlying object rather than its spelling.
-
-The project is deliberately built around **fact-disjoint evaluation**: test facts
-(and, in the hardest splits, entire *notations*) are held out of training, so a
-model cannot succeed by memorizing surface forms it has already seen. This
-construction is what separates genuine notation invariance from same-form recall,
-and it is where several intuitively-strong models are shown to fail.
-
----
-
-## Results at a glance
-
-### 1. HGNC gene-alias normalization (fact- and notation-disjoint)
-
-Held-out `alias_symbol` queries are retrieved against the full approved-symbol
-candidate pool (`44,997` symbols). The target approved symbols for the held-out
-queries are present in this evaluation pool; the disjointness is in the training
-facts and in the query notation, not in the candidate inventory.
+Queries are held-out `alias_symbol` forms; candidates are the full
+`44,997` approved-symbol inventory.
 
 | Method | top-1 | top-5 | MRR |
 | --- | ---: | ---: | ---: |
-| Canonical teacher (exact structured match) | **1.000** | **1.000** | **1.000** |
-| SapBERT dense | **0.080** | **0.190** | **0.134** |
-| BioSyn hybrid (λ=0.7) | **0.077** | **0.182** | **0.129** |
-| Character n-gram (TF-IDF cosine) | **0.047** | **0.108** | **0.077** |
-| Contrastive char-CNN student | **0.041 ± 0.002** | **0.075 ± 0.001** | **0.059 ± 0.001** |
-| Byte-Transformer student | **0.024 ± 0.002** | **0.055 ± 0.003** | **0.040 ± 0.001** |
+| Canonical teacher | 1.000 | 1.000 | 1.000 |
+| SapBERT dense | 0.080 | 0.190 | 0.134 |
+| BioSyn hybrid | 0.077 | 0.182 | 0.129 |
+| Character n-gram | 0.047 | 0.108 | 0.077 |
+| Char-CNN student | 0.041 ± 0.002 | 0.075 ± 0.001 | 0.059 ± 0.001 |
+| Byte-Transformer student | 0.024 ± 0.002 | 0.055 ± 0.003 | 0.040 ± 0.001 |
 
-**The lightweight contrastive student.** A byte-level char-CNN
-(~100k params) trained with supervised contrastive loss over 22,364 HGNC
-equivalence classes reaches **0.985 in-domain validation top-1** and
-**0.059 ± 0.001 MRR** on the held-out `alias_symbol` notation, *below* both the
-SapBERT dense retriever (0.134) and the char n-gram lexical floor (0.077).
-Adding byte-rule or frozen neural attention distillation changes held-out MRR by
-only about 0.001, within seed variance. Those attention-distillation ablations
-use a separate three-arm run and therefore report a slightly different
-contrastive-only baseline (`0.055 ± 0.002` MRR); the headline char-CNN row above
-is the main 5-seed HGNC student sweep.
+The char-CNN reaches `0.985` in-domain validation top-1, but only
+`0.059 ± 0.001` MRR on the held-out notation. Attention distillation changes MRR
+by about `0.001`, within seed variance.
 
-**Architecture control.** A byte-level Transformer with the same byte
-tokenization, contrastive objective, and 5-seed protocol scores lower than the
-char-CNN (`0.040 ± 0.001` vs. `0.059 ± 0.001` MRR). This is plausible because
-the CNN has a useful local n-gram inductive bias for short character strings,
-while a shallow Transformer trained from scratch over raw bytes must learn that
-local syntax from the same limited signal. The result suggests the bottleneck is
-semantic pretraining or teacher signal, not merely the sequence mixer.
+### HGVS Numeric Pilot
 
-Off-the-shelf methods trade places by notation: SapBERT dense wins most on the
-low-surface-overlap `alias_name` notation (0.316 vs. char n-gram 0.042), while
-the BioSyn-style sparse+dense hybrid is strongest on the high-overlap
-`prev_symbol` notation (0.250).
+On matched-only position-confounded hard retrieval:
 
-### 2. Parallel HGVS numeric pilot (appendix-style)
+| Numeric input mode | top-1 | MRR |
+| --- | ---: | ---: |
+| Text-only / digit-token | 0.9195 | 0.957 |
+| xVal-style continuous tokenization | 0.9060 | 0.951 |
+| Explicit normalized scalar | 0.9000 | 0.947 |
+| Sinusoidal Fourier features | 0.4980 | 0.708 |
 
-The HGVS protein-to-nucleotide experiment is a parallel pilot rather than part of
-the core HGNC gene-symbol claim. It is kept here for reproducibility and is best
-treated as appendix material unless the paper is expanded into a full dual-task
-layout with its own task/data section and main results table.
+Numeric features look helpful on easy random-fill pools, but not when candidates
+share the same parsed protein and cDNA positions.
 
-The pilot aligns protein HGVS to nucleotide HGVS on a fact-disjoint split, scored
-against position-confounded candidate pools. The current analysis reports both
-the full 20-candidate pool (about 2.25 position-matched decoys plus 16.75 random
-fill decoys per query) and a stricter matched-only pool that drops the easy random
-fill. The decisive number is matched-only hard top-1:
-
-| Numeric input mode | Matched-only top-1 | 95% CI | MRR |
-| --- | ---: | :---: | ---: |
-| **None (text-only / digit-token)** | **0.9195** | [0.908, 0.930] | **0.957** |
-| xVal-style continuous tokenization | 0.9060 | [0.892, 0.919] | 0.951 |
-| Explicit normalized scalar | 0.9000 | [0.887, 0.913] | 0.947 |
-| Sinusoidal Fourier features | 0.4980 | [0.477, 0.518] | 0.708 |
-
-**Numeric position features can look helpful on the full pool, but not on the
-matched-only pool.** Explicit and xVal-style features reject random-fill decoys
-trivially, so they appear to win when the pool contains many easy negatives. Once
-the positive is ranked only against decoys sharing the same parsed
-`protein_position` and `cdna_position`, the text-only byte encoder is strongest.
-Within a shared-position pool, the task largely reduces to mapping the amino-acid
-change to the correct codon change, so the result is as much learned genetic-code
-structure as generic notation invariance. Full ablation logs and interpretation
-are in [`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md).
-
-The recurring lesson across the main benchmark and the HGVS pilot:
-**evaluation design decides the conclusion.** Fact-disjoint splits and
-position-confounded hard pools expose gaps that in-distribution validation hides.
-
-For a visual walkthrough of the benchmark design and negative result, open the
-standalone demo page at [`docs/bioxrep_visualization_demo.html`](docs/bioxrep_visualization_demo.html).
-
----
-
-## Repository layout
-
-```
-bioxrep/
-  data/         synthetic generator, form/split builders, public-source fetchers
-  baselines/    char n-gram, SapBERT dense, BioSyn hybrid, canonical teacher,
-                student flat-pool retrieval, hard-set retrieval
-  train/        contrastive student trainer (mean-pool / char-CNN encoders)
-  eval/         hard-candidate-set student evaluation, invariance-ratio metric
-outputs/        result JSONs, trained checkpoints, comparison table + figure
-data/           
-```
-
----
-
-## Installation
+## Install
 
 ```bash
-conda create -n bioxrep-sapbert python=3.11 -y && conda activate bioxrep-sapbert
+conda create -n bioxrep-sapbert python=3.11 -y
+conda activate bioxrep-sapbert
 pip install torch numpy scikit-learn transformers pytest
 ```
 
-SapBERT/BioSyn baselines download `cambridgeltl/SapBERT-from-PubMedBERT-fulltext`
-from the Hugging Face hub on first use; set `HF_HOME=.hf_cache` to cache locally.
-
----
+SapBERT/BioSyn runs download `cambridgeltl/SapBERT-from-PubMedBERT-fulltext` on
+first use. Set `HF_HOME=.hf_cache` to cache locally.
 
 ## Quickstart
 
-Generate the deterministic synthetic benchmark and run the first lexical baseline:
+Run the deterministic synthetic benchmark and first lexical baseline:
 
 ```bash
 python3 -m bioxrep.data.generate_synthetic --output data/bioxrep_synth.jsonl --variant-count 40 --seed 13
@@ -173,148 +76,44 @@ python3 -m bioxrep.data.prepare_forms --input data/bioxrep_synth.jsonl --output 
 python3 -m bioxrep.baselines.char_ngram_retrieval --input data/bioxrep_synth.jsonl
 ```
 
-On all synthetic forms the char n-gram retriever reaches top-1 `0.480`, MRR
-`0.529`; on a held-out cDNA-like variant notation it drops to MRR `0.077`, the
-first illustration of the notation-transfer gap.
-
----
-
-## Reproducing the benchmarks
-
-### HGNC gene-alias normalization
+Run the HGNC comparison table:
 
 ```bash
-# 1. Fetch HGNC and build real gene-alias equivalence classes
 python3 -m bioxrep.data.fetch_public hgnc_complete_set
-python3 -m bioxrep.data.build_hgnc_aliases --input data/raw/hgnc_complete_set/hgnc_complete_set.txt --output data/bioxrep_hgnc_aliases.jsonl
-python3 -m bioxrep.data.prepare_forms --input data/bioxrep_hgnc_aliases.jsonl --output data/bioxrep_hgnc_aliases_forms.jsonl
-python3 -m bioxrep.data.make_splits --input data/bioxrep_hgnc_aliases.jsonl --output data/bioxrep_hgnc_alias_symbol_heldout.jsonl --track gene_alias --heldout-notation alias_symbol
-
-# 2. Off-the-shelf comparison (char n-gram, SapBERT dense, BioSyn hybrid, canonical teacher) + table + figure
+python3 -m bioxrep.data.build_hgnc_aliases \
+  --input data/raw/hgnc_complete_set/hgnc_complete_set.txt \
+  --output data/bioxrep_hgnc_aliases.jsonl
+python3 -m bioxrep.data.make_splits \
+  --input data/bioxrep_hgnc_aliases.jsonl \
+  --output data/bioxrep_hgnc_alias_symbol_heldout.jsonl \
+  --track gene_alias --heldout-notation alias_symbol
 HF_HOME=.hf_cache OMP_NUM_THREADS=8 PYTHONPATH=. python3 scripts/run_hgnc_alias_comparison.py
-
-# 3. Build the fact-disjoint training classes (exclude alias_symbol test genes) and verify no leakage
-python3 -m bioxrep.data.filter_equivalence_classes \
-  --input data/bioxrep_hgnc_aliases.jsonl --reference data/bioxrep_hgnc_alias_symbol_heldout.jsonl \
-  --output data/bioxrep_hgnc_aliases_train_classes.jsonl --mode exclude
-python3 scripts/verify_no_leakage.py \
-  --train data/bioxrep_hgnc_aliases_train_classes.jsonl \
-  --test data/bioxrep_hgnc_alias_symbol_heldout.jsonl --test-split test --heldout-notation alias_symbol
-
-# 4. Train the char-CNN student and score it on the same flat pool (negative result)
-HF_HUB_OFFLINE=1 OMP_NUM_THREADS=8 PYTHONPATH=. python3 -m bioxrep.train.train_contrastive_student \
-  --class-input data/bioxrep_hgnc_aliases_train_classes.jsonl \
-  --class-notations approved_symbol,prev_symbol,alias_name,prev_name,approved_name \
-  --forms-per-class 4 --valid-input data/bioxrep_hgnc_aliases_valid_pairs.jsonl \
-  --output-dir outputs/contrastive_student_hgnc_alias \
-  --encoder cnn --hidden-dim 64 --projection-dim 128 --epochs 3 --batch-size 128 --max-length 64 --seed 13
-HF_HUB_OFFLINE=1 OMP_NUM_THREADS=8 PYTHONPATH=. python3 -m bioxrep.baselines.student_retrieval \
-  --checkpoint outputs/contrastive_student_hgnc_alias/char_cnn_student.pt \
-  --input data/bioxrep_hgnc_alias_symbol_heldout.jsonl --track gene_alias \
-  --query-notation alias_symbol --query-split test --candidate-notation approved_symbol --candidate-split train \
-  --max-queries 2000 --bootstrap --output outputs/student_hgnc_alias_symbol_heldout.json
 ```
 
-To enable the implemented alignment-teacher distillation objective, add for
-example `--attention-distillation-weight 0.1`. This supervises the student's
-token-level cross-attention against a deterministic byte/digit alignment teacher
-and records `train_attention_distillation_loss` / `valid_attention_distillation_loss`
-in the result history.
+## Repository Map
 
-Compute the promised invariance ratio (between-class / within-class cosine
-distance) for any saved student checkpoint:
-
-```bash
-PYTHONPATH=. python3 -m bioxrep.eval.invariance_ratio \
-  --checkpoint outputs/contrastive_student_hgnc_alias/char_cnn_student.pt \
-  --input data/bioxrep_hgnc_aliases_train_classes.jsonl \
-  --track gene_alias --notations approved_symbol,prev_symbol,alias_name,prev_name,approved_name \
-  --output outputs/hgnc_alias_invariance_ratio.json
+```text
+bioxrep/data/       public-source fetchers, form builders, split builders
+bioxrep/baselines/  lexical, SapBERT/BioSyn, canonical teacher, student retrieval
+bioxrep/models/     byte-level char-CNN and Transformer encoders
+bioxrep/train/      supervised-contrastive student trainer
+bioxrep/eval/       hard-set retrieval and invariance metrics
+scripts/            reproducible experiment drivers and leakage checks
+docs/               frozen results, review notes, roadmap, visual demo
+tests/              unit tests for metrics, encoders, and attention distillation
 ```
+<!-- 
+## More Detail
 
-Pass `--bootstrap` to any retrieval command to add 95% bootstrap CIs, and sweep
-`--seed` on the student for mean ± std. Run `scripts/verify_no_leakage.py`
-whenever you rebuild a split — it fails loudly on fact or held-out-notation leakage.
+- HGNC baseline writeup: [`docs/bioxrep_sapbert_baseline.md`](docs/bioxrep_sapbert_baseline.md)
+- HGVS numeric pilot: [`docs/bioxrep_hgvs_results.md`](docs/bioxrep_hgvs_results.md)
+- Work-so-far review: [`docs/bioxrep_review_and_gaps.md`](docs/bioxrep_review_and_gaps.md)
+- Research roadmap: [`docs/bioxrep_experiment_roadmap.md`](docs/bioxrep_experiment_roadmap.md)
+- Visual demo: [`docs/bioxrep_visualization_demo.html`](docs/bioxrep_visualization_demo.html) -->
 
-Artifact sizes: `44,997` gene-alias classes → `387,123` flattened forms;
-the `alias_symbol` holdout writes `342,405` train and `44,718` test rows.
-In retrieval commands, `--candidate-split train` names the approved-symbol
-inventory used as candidates; the student training classes still exclude the
-held-out `alias_symbol` test facts verified above.
+## Reproducibility Notes
 
-### Parallel HGVS protein↔nucleotide pilot
-
-The appendix-style HGVS pipeline builds ClinVar HGVS classes, fact-disjoint
-position holdouts, strict position-matched hard candidate pools, and the scaled
-text-only / numeric-feature ablation matrix. Headline reproduction:
-
-```bash
-# Scaled fact-disjoint split -> pairs -> strict hard pool -> text-only CNN.
-# First build data/bioxrep_clinvar_hgvs_variants_numeric_50k.jsonl from ClinVar HGVS,
-# as shown in docs/bioxrep_hgvs_results.md.
-python3 -m bioxrep.data.split_equivalence_classes --input data/bioxrep_clinvar_hgvs_variants_numeric_50k.jsonl \
-  --train-output data/bioxrep_clinvar_hgvs_variants_numeric_scaled_train_40k.jsonl \
-  --test-output data/bioxrep_clinvar_hgvs_variants_numeric_scaled_test_10k.jsonl \
-  --required-notations protein_expression,nucleotide_expression --train-fraction 0.8 --max-examples 50000 --seed 31
-KMP_DUPLICATE_LIB_OK=TRUE python3 -m bioxrep.train.train_contrastive_student \
-  --input data/bioxrep_clinvar_hgvs_scaled_train_pairs_50k.jsonl \
-  --valid-input data/bioxrep_clinvar_hgvs_scaled_test_pairs_20k.jsonl \
-  --hard-valid-input data/bioxrep_clinvar_hgvs_scaled_test_hard_protein_cdna_filled20_2k.jsonl \
-  --output-dir outputs/contrastive_student_hgvs_scaled_pair_textonly_50k \
-  --encoder cnn --epochs 3 --batch-size 128 --max-length 160 --hidden-dim 64 --projection-dim 128 \
-  --attribute-fields variation_id --attribute-loss-weight 0.2
-```
-
-`KMP_DUPLICATE_LIB_OK=TRUE` is a local macOS workaround for duplicate OpenMP
-runtime initialization in this PyTorch environment.
-
-### Additional notation bridges
-
-The repository also builds ClinVar AlleleID↔gene bridges and ClinVar
-variant-summary clinical-annotation classes (opaque-identifier and
-clinical-significance notations), plus a credentialed MIMIC-IV lab-value track
-for unit/reference-range invariance.
-
----
-
-## Related work
-
-BioXRep sits at the intersection of four literatures.
-
-- **Numeracy in language models.** *Do NLP Models Know Numbers? Probing Numeracy
-  in Embeddings* (Wallace et al., EMNLP 2019) shows standard embeddings capture
-  numeric structure only partially; *xVal: A Continuous Numerical Tokenization for
-  Scientific Language Models* (Golkar et al., 2023) motivates magnitude-aware
-  numeric encoding — directly relevant to BioXRep's position and lab-value
-  handling.
-- **Multi-view / contrastive representation learning.** SimCLR (Chen et al., 2020)
-  and Supervised Contrastive Learning (Khosla et al., 2020) underpin the
-  equivalence-class contrastive objective; CLIP (Radford et al., 2021) motivates
-  treating distinct notations as aligned views of one object.
-- **Biomedical entity normalization.** BioSyn (Sung et al., ACL 2020) and SapBERT
-  (Liu et al., NAACL 2021) are the strongest off-the-shelf baselines for
-  alias-heavy retrieval and are benchmarked directly here.
-- **Variant and clinical normalization.** tmVar 1–3 (Wei et al., 2013/2018/2022)
-  and the GA4GH Variation Representation Specification (Wagner et al., Cell
-  Genomics 2021) frame variant equivalence as a canonicalization problem; clinical
-  foundation models — Med-BERT, BEHRT, CLMBR, G-BERT — motivate the EHR lab-value
-  track.
-
----
-## Reproducibility notes
-
-- `data/`, `data/raw/`, and `.hf_cache/` are git-ignored and fully regenerable
-  from the commands above; `data/raw/fetch_manifest.json` records fetched source
-  keys, URLs, paths, timestamps, and byte counts.
-- MIMIC-IV requires credentialed PhysioNet access (v3.1 training + data use
-  agreement); credentials are read from `PHYSIONET_USERNAME` / `PHYSIONET_PASSWORD`
-  or a git-ignored `.env` and are never stored by the code.
-- Frozen, paper-grade result tables live under `docs/`; `outputs/` holds the
-  regenerable result JSONs, checkpoints, comparison table, and figure. `outputs/`
-  is git-ignored, so the frozen tables are not currently backed by committed
-  artifacts — for an auditable paper release, commit the small result JSONs (the
-  metric files, not checkpoints) so each reported number is traceable to a run.
-- `scripts/verify_no_leakage.py` asserts fact- and notation-disjointness of any
-  train/test construction; run it after rebuilding splits. All retrieval commands
-  accept `--bootstrap` for 95% percentile-bootstrap CIs, and the learned student
-  accepts `--seed` for multi-seed mean ± std reporting.
+- `data/`, `outputs/`, `.hf_cache/`, and `paper/` are git-ignored.
+- Use `scripts/verify_no_leakage.py` after rebuilding any split.
+- Retrieval commands support `--bootstrap` for 95% bootstrap CIs.
+- Learned student runs support `--seed` for multi-seed mean ± std reporting.
